@@ -1,10 +1,12 @@
 import type { Request, Response } from "express";
-import jwt from "jsonwebtoken";
 import { config, frontendUrl } from "../../config.js";
 import { prisma } from "../../db.js";
 import { encryptSecret } from "../../lib/crypto.js";
 import { writeAudit } from "../../lib/audit.js";
+import { issueOAuthState, verifyOAuthState } from "../../lib/oauthState.js";
 import { exchangeZoomAuthCode, getZoomUserInfo } from "./client.js";
+
+const STATE_COOKIE = "zoom_oauth_nonce";
 
 /**
  * Least-privilege scopes, mapped to the endpoints they gate (see plan doc) —
@@ -21,7 +23,7 @@ export const ZOOM_SCOPES = [
 
 export function zoomConnectHandler(req: Request, res: Response): void {
   const user = req.user!;
-  const state = jwt.sign({ tenantId: user.tenantId, userId: user.userId }, config.JWT_SECRET, { expiresIn: "10m" });
+  const state = issueOAuthState(res, STATE_COOKIE, { tenantId: user.tenantId, userId: user.userId });
   const url = new URL("https://zoom.us/oauth/authorize");
   url.searchParams.set("response_type", "code");
   url.searchParams.set("client_id", config.ZOOM_CLIENT_ID);
@@ -45,10 +47,8 @@ export async function zoomCallbackHandler(req: Request, res: Response): Promise<
     return;
   }
 
-  let claims: { tenantId: string; userId: string };
-  try {
-    claims = jwt.verify(state, config.JWT_SECRET) as { tenantId: string; userId: string };
-  } catch {
+  const claims = verifyOAuthState<{ tenantId: string; userId: string }>(req, res, STATE_COOKIE, state);
+  if (!claims) {
     res.redirect(`${frontendUrl}/zoom?error=${encodeURIComponent("Invalid or expired connect link — try again")}`);
     return;
   }

@@ -1,9 +1,9 @@
 import type { Request, Response } from "express";
-import jwt from "jsonwebtoken";
 import { config, frontendUrl } from "../../config.js";
 import { prisma } from "../../db.js";
 import { encryptSecret } from "../../lib/crypto.js";
 import { writeAudit } from "../../lib/audit.js";
+import { issueOAuthState, verifyOAuthState } from "../../lib/oauthState.js";
 
 export const GOOGLE_SCOPES = [
   "https://www.googleapis.com/auth/gmail.send",
@@ -12,17 +12,8 @@ export const GOOGLE_SCOPES = [
 
 export const MICROSOFT_SCOPES = ["offline_access", "Mail.Send", "Mail.ReadBasic", "User.Read"].join(" ");
 
-function stateFor(userId: string, tenantId: string): string {
-  return jwt.sign({ userId, tenantId }, config.JWT_SECRET, { expiresIn: "10m" });
-}
-
-function verifyState(state: string): { userId: string; tenantId: string } | null {
-  try {
-    return jwt.verify(state, config.JWT_SECRET) as { userId: string; tenantId: string };
-  } catch {
-    return null;
-  }
-}
+const GOOGLE_STATE_COOKIE = "mailbox_google_oauth_nonce";
+const MICROSOFT_STATE_COOKIE = "mailbox_microsoft_oauth_nonce";
 
 // These callbacks are full-page browser redirects (the frontend does window.location, not
 // fetch), so every exit path must send the browser back into the app — never res.json, or the
@@ -39,7 +30,7 @@ export function googleConnectHandler(req: Request, res: Response): void {
   url.searchParams.set("scope", GOOGLE_SCOPES);
   url.searchParams.set("access_type", "offline");
   url.searchParams.set("prompt", "consent");
-  url.searchParams.set("state", stateFor(req.user!.userId, req.user!.tenantId));
+  url.searchParams.set("state", issueOAuthState(res, GOOGLE_STATE_COOKIE, { userId: req.user!.userId, tenantId: req.user!.tenantId }));
   res.json({ authorizeUrl: url.toString() });
 }
 
@@ -53,7 +44,7 @@ export async function googleCallbackHandler(req: Request, res: Response): Promis
     res.redirect(redirectToMailbox({ error: "Missing code/state from Google" }));
     return;
   }
-  const claims = verifyState(state);
+  const claims = verifyOAuthState<{ userId: string; tenantId: string }>(req, res, GOOGLE_STATE_COOKIE, state);
   if (!claims) {
     res.redirect(redirectToMailbox({ error: "Invalid or expired connect link — try again" }));
     return;
@@ -123,7 +114,7 @@ export function microsoftConnectHandler(req: Request, res: Response): void {
   url.searchParams.set("redirect_uri", config.MICROSOFT_REDIRECT_URI);
   url.searchParams.set("response_type", "code");
   url.searchParams.set("scope", MICROSOFT_SCOPES);
-  url.searchParams.set("state", stateFor(req.user!.userId, req.user!.tenantId));
+  url.searchParams.set("state", issueOAuthState(res, MICROSOFT_STATE_COOKIE, { userId: req.user!.userId, tenantId: req.user!.tenantId }));
   res.json({ authorizeUrl: url.toString() });
 }
 
@@ -137,7 +128,7 @@ export async function microsoftCallbackHandler(req: Request, res: Response): Pro
     res.redirect(redirectToMailbox({ error: "Missing code/state from Microsoft" }));
     return;
   }
-  const claims = verifyState(state);
+  const claims = verifyOAuthState<{ userId: string; tenantId: string }>(req, res, MICROSOFT_STATE_COOKIE, state);
   if (!claims) {
     res.redirect(redirectToMailbox({ error: "Invalid or expired connect link — try again" }));
     return;
