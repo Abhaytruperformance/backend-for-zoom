@@ -1,0 +1,435 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+// ---------- Enums ----------
+
+enum ConnectionStatus {
+  ACTIVE
+  REAUTH_REQUIRED
+  REVOKED
+}
+
+enum MailboxProvider {
+  GOOGLE
+  MICROSOFT
+}
+
+enum MeetingStatus {
+  CAPTURED
+  WAITING_FOR_TRANSCRIPT
+  TRANSCRIPT_READY
+  PROCESSING
+  EXTRACTED
+  DRAFT_READY
+  AWAITING_APPROVAL
+  APPROVED
+  SENDING
+  COMPLETED
+  FAILED
+}
+
+enum ConversationType {
+  SALES
+  PROJECT_DELIVERY
+  INTERNAL
+  OTHER
+}
+
+enum DecisionStatus {
+  CONFIRMED
+  PROPOSED
+  TENTATIVE
+  REJECTED
+  SUPERSEDED
+}
+
+enum ActionItemStatus {
+  OPEN
+  COMPLETED
+  CANCELLED
+}
+
+enum OwnerType {
+  INTERNAL
+  EXTERNAL
+}
+
+enum DraftStatus {
+  DRAFT
+  AWAITING_APPROVAL
+  APPROVED
+  REJECTED
+}
+
+enum EmailSendStatus {
+  PENDING
+  SENT
+  FAILED
+  NEEDS_RECONCILIATION
+  AUTH_REQUIRED
+}
+
+// ---------- Tenancy / Auth ----------
+
+model Tenant {
+  id        String   @id @default(cuid())
+  name      String
+  createdAt DateTime @default(now())
+
+  users           User[]
+  zoomConnections ZoomConnection[]
+  webhookEvents   WebhookEvent[]
+  meetings        Meeting[]
+  accounts        Account[]
+  contacts        Contact[]
+  decisions       Decision[]
+  actionItems     ActionItem[]
+  auditLogs       AuditLog[]
+}
+
+model User {
+  id           String   @id @default(cuid())
+  tenantId     String
+  tenant       Tenant   @relation(fields: [tenantId], references: [id])
+  email        String
+  passwordHash String
+  name         String?
+  createdAt    DateTime @default(now())
+
+  // Password reset — token is stored hashed (never plaintext), short-lived, single-use.
+  resetTokenHash      String?
+  resetTokenExpiresAt DateTime?
+
+  mailboxConnections MailboxConnection[]
+  approvalSnapshots  ApprovalSnapshot[]
+  actionItemsOwned   ActionItem[]        @relation("ActionItemOwnerUser")
+
+  @@unique([tenantId, email])
+  @@index([tenantId])
+}
+
+// ---------- Zoom (per tenant) ----------
+
+model ZoomConnection {
+  id                String           @id @default(cuid())
+  tenantId          String
+  tenant            Tenant           @relation(fields: [tenantId], references: [id])
+  zoomUserId        String
+  zoomAccountId     String
+  accessTokenEnc    String
+  refreshTokenEnc   String
+  expiresAt         DateTime
+  scopes            String
+  status            ConnectionStatus @default(ACTIVE)
+  connectedByUserId String?
+  createdAt         DateTime         @default(now())
+  updatedAt         DateTime         @updatedAt
+
+  @@unique([tenantId, zoomUserId])
+  @@index([tenantId])
+}
+
+// ---------- Mailbox (per user, send-as-rep) ----------
+
+model MailboxConnection {
+  id              String           @id @default(cuid())
+  userId          String
+  user            User             @relation(fields: [userId], references: [id])
+  provider        MailboxProvider
+  email           String
+  accessTokenEnc  String
+  refreshTokenEnc String
+  expiresAt       DateTime
+  scopes          String
+  status          ConnectionStatus @default(ACTIVE)
+  lastValidatedAt DateTime?
+  lastUsedAt      DateTime?
+  lastAuthError   String?
+  createdAt       DateTime         @default(now())
+  updatedAt       DateTime         @updatedAt
+
+  @@unique([userId, provider])
+  @@index([userId])
+}
+
+// ---------- Inbound webhook idempotency ----------
+
+model WebhookEvent {
+  id              String    @id @default(cuid())
+  tenantId        String?
+  tenant          Tenant?   @relation(fields: [tenantId], references: [id])
+  provider        String
+  eventType       String
+  providerEventId String
+  payloadHash     String
+  payload         Json
+  receivedAt      DateTime  @default(now())
+  processedAt     DateTime?
+  status          String    @default("RECEIVED")
+
+  @@unique([provider, providerEventId])
+  @@index([tenantId])
+}
+
+// ---------- Meetings / transcripts ----------
+
+model Meeting {
+  id              String        @id @default(cuid())
+  tenantId        String
+  tenant          Tenant        @relation(fields: [tenantId], references: [id])
+  zoomMeetingId   String
+  zoomUuid        String
+  source          String        @default("zoom")
+  title           String
+  startTime       DateTime?
+  endTime         DateTime?
+  durationSec     Int?
+  hostEmail       String?
+  participants    Json
+  accountId       String?
+  account         Account?      @relation(fields: [accountId], references: [id])
+  contactId       String?
+  contact         Contact?      @relation(fields: [contactId], references: [id])
+  needsResolution Boolean       @default(false)
+  status          MeetingStatus @default(CAPTURED)
+  failureReason   String?
+  createdAt       DateTime      @default(now())
+  updatedAt       DateTime      @updatedAt
+
+  transcript     Transcript?
+  extraction     MeetingExtraction?
+  decisions      Decision[]
+  actionItems    ActionItem[]
+  followupDraft  FollowupDraft?
+
+  @@unique([tenantId, zoomUuid])
+  @@index([tenantId])
+  @@index([accountId])
+  @@index([status])
+}
+
+model Transcript {
+  id                 String   @id @default(cuid())
+  meetingId          String   @unique
+  meeting            Meeting  @relation(fields: [meetingId], references: [id])
+  rawVtt             String
+  normalizedSegments Json
+  status             String   @default("READY")
+  source             String   @default("zoom")
+  version            Int      @default(1)
+  createdAt          DateTime @default(now())
+  updatedAt          DateTime @updatedAt
+}
+
+// ---------- Accounts / contacts ----------
+
+model Account {
+  id            String    @id @default(cuid())
+  tenantId      String
+  tenant        Tenant    @relation(fields: [tenantId], references: [id])
+  name          String
+  domains       String[]
+  emails        String[]
+  lastMeetingAt DateTime?
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @updatedAt
+
+  contacts              Contact[]
+  meetings              Meeting[]
+  relationshipSummaries RelationshipSummary[]
+  decisions             Decision[]
+  actionItems           ActionItem[]
+
+  @@index([tenantId])
+}
+
+model Contact {
+  id        String   @id @default(cuid())
+  tenantId  String
+  tenant    Tenant   @relation(fields: [tenantId], references: [id])
+  accountId String?
+  account   Account? @relation(fields: [accountId], references: [id])
+  name      String
+  email     String
+  role      String?
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  meetings         Meeting[]
+  actionItemsOwned ActionItem[] @relation("ActionItemOwnerContact")
+
+  @@unique([tenantId, email])
+  @@index([tenantId])
+  @@index([accountId])
+}
+
+// ---------- Derived knowledge ----------
+
+model RelationshipSummary {
+  id                   String   @id @default(cuid())
+  accountId            String
+  account              Account  @relation(fields: [accountId], references: [id])
+  content              String
+  sourceMeetingIds     String[]
+  sourceActionItemIds  String[]
+  model                String
+  modelVersion         String
+  promptVersion        String
+  schemaVersion        String
+  generatedAt          DateTime @default(now())
+
+  @@index([accountId, generatedAt])
+}
+
+model MeetingExtraction {
+  id               String           @id @default(cuid())
+  meetingId        String           @unique
+  meeting          Meeting          @relation(fields: [meetingId], references: [id])
+  summary          String
+  risks            Json
+  openQuestions    Json
+  nextSteps        Json
+  conversationType ConversationType @default(OTHER)
+  model            String
+  modelVersion     String
+  promptVersion    String
+  schemaVersion    String
+  contextUsed      Json
+  createdAt        DateTime         @default(now())
+}
+
+model Decision {
+  id           String         @id @default(cuid())
+  tenantId     String
+  tenant       Tenant         @relation(fields: [tenantId], references: [id])
+  meetingId    String
+  meeting      Meeting        @relation(fields: [meetingId], references: [id])
+  accountId    String?
+  account      Account?       @relation(fields: [accountId], references: [id])
+  description  String
+  status       DecisionStatus @default(PROPOSED)
+  supersedesId String?        @unique
+  supersedes   Decision?      @relation("DecisionSupersede", fields: [supersedesId], references: [id])
+  supersededBy Decision?      @relation("DecisionSupersede")
+  confidence   Float          @default(1.0)
+  evidenceRef  Json?
+  createdAt    DateTime       @default(now())
+  updatedAt    DateTime       @updatedAt
+
+  @@index([tenantId, accountId])
+  @@index([meetingId])
+}
+
+model ActionItem {
+  id               String            @id @default(cuid())
+  tenantId         String
+  tenant           Tenant            @relation(fields: [tenantId], references: [id])
+  meetingId        String
+  meeting          Meeting           @relation(fields: [meetingId], references: [id])
+  accountId        String?
+  account          Account?          @relation(fields: [accountId], references: [id])
+  description      String
+  ownerType        OwnerType         @default(EXTERNAL)
+  ownerUserId      String?
+  ownerUser        User?             @relation("ActionItemOwnerUser", fields: [ownerUserId], references: [id])
+  ownerContactId   String?
+  ownerContact     Contact?          @relation("ActionItemOwnerContact", fields: [ownerContactId], references: [id])
+  ownerEmail       String?
+  ownerDisplayName String
+  dueDate          DateTime?
+  priority         String            @default("normal")
+  status           ActionItemStatus  @default(OPEN)
+  confidence       Float             @default(1.0)
+  evidenceRef      Json?
+  supersedesId     String?           @unique
+  supersedes       ActionItem?       @relation("ActionItemSupersede", fields: [supersedesId], references: [id])
+  supersededBy     ActionItem?       @relation("ActionItemSupersede")
+  createdAt        DateTime          @default(now())
+  updatedAt        DateTime          @updatedAt
+
+  @@index([tenantId, accountId])
+  @@index([meetingId])
+  @@index([status])
+}
+
+// ---------- Follow-up / approval / send ----------
+
+model FollowupDraft {
+  id              String      @id @default(cuid())
+  meetingId       String      @unique
+  meeting         Meeting     @relation(fields: [meetingId], references: [id])
+  subject         String
+  body            String
+  recipients      Json
+  tonePreset      String      @default("client-formal")
+  status          DraftStatus @default(DRAFT)
+  model           String
+  modelVersion    String
+  promptVersion   String
+  templateVersion String
+  createdAt       DateTime    @default(now())
+  updatedAt       DateTime    @updatedAt
+
+  approvalSnapshot ApprovalSnapshot?
+}
+
+model ApprovalSnapshot {
+  id               String   @id @default(cuid())
+  draftId          String   @unique
+  draft            FollowupDraft @relation(fields: [draftId], references: [id])
+  subject          String
+  body             String
+  recipients       Json
+  actionItems      Json
+  approvedByUserId String
+  approvedByUser   User     @relation(fields: [approvedByUserId], references: [id])
+  approvedAt       DateTime @default(now())
+  modelVersion     String
+  promptVersion    String
+  templateVersion  String
+  draftVersion     Int      @default(1)
+
+  sendAttempt EmailSendAttempt?
+}
+
+// One row per approval snapshot (1:1) — a single evolving send record, not
+// one row per retry, so "never a second send" is a single row's status,
+// not a set of rows to reconcile against each other.
+model EmailSendAttempt {
+  id                      String          @id @default(cuid())
+  snapshotId              String          @unique
+  snapshot                ApprovalSnapshot @relation(fields: [snapshotId], references: [id])
+  provider                MailboxProvider
+  status                  EmailSendStatus @default(PENDING)
+  providerMessageId       String?
+  internetMessageIdHeader String          @unique
+  attempts                Int             @default(0)
+  lastError               String?
+  nextRetryAt             DateTime?
+  completedAt             DateTime?
+  createdAt               DateTime        @default(now())
+  updatedAt               DateTime        @updatedAt
+}
+
+// ---------- Audit ----------
+
+model AuditLog {
+  id           String   @id @default(cuid())
+  tenantId     String
+  tenant       Tenant   @relation(fields: [tenantId], references: [id])
+  actorUserId  String?
+  entityType   String
+  entityId     String
+  action       String
+  metadata     Json?
+  createdAt    DateTime @default(now())
+
+  @@index([tenantId, entityType, entityId])
+  @@index([tenantId, createdAt])
+}

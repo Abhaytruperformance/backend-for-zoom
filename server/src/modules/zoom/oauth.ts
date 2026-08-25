@@ -1,0 +1,97 @@
+import type { Request, Response } from "express";
+import jwt from "jsonwebtoken";
+import { config, frontendUrl } from "../../config.js";
+import { prisma } from "../../db.js";
+import { encryptSecret } from "../../lib/crypto.js";
+import { writeAudit } from "../../lib/audit.js";
+import { exchangeZoomAuthCode, getZoomUserInfo } from "./client.js";
+
+/**
+ * Least-privilege scopes, mapped to the endpoints they gate (see plan doc) —
+ * spot-check these against the live Marketplace app on first real connect.
+ */
+export const ZOOM_SCOPES = [
+  "user:read:user",
+  "meeting:read:meeting",
+  "meeting:read:list_meetings",
+  "cloud_recording:read:list_recording_files",
+  "cloud_recording:read:content", // Zoom's actual current name for what the plan doc guessed as "cloud_recording:read:recording"
+  "meeting:read:list_past_participants",
+].join(" ");
+
+export function zoomConnectHandler(req: Request, res: Response): void {
+  const user = req.user!;
+  const state = jwt.sign({ tenantId: user.tenantId, userId: user.userId }, config.JWT_SECRET, { expiresIn: "10m" });
+  const url = new URL("https://zoom.us/oauth/authorize");
+  url.searchParams.set("response_type", "code");
+  url.searchParams.set("client_id", config.ZOOM_CLIENT_ID);
+  url.searchParams.set("redirect_uri", config.ZOOM_REDIRECT_URI);
+  url.searchParams.set("state", state);
+  res.json({ authorizeUrl: url.toString() });
+}
+
+export async function zoomCallbackHandler(req: Request, res: Response): Promise<void> {
+  const { code, state, error } = req.query;
+
+  // This is a full-page browser redirect (the frontend does window.location, not fetch), so
+  // every exit path here must send the browser back into the app — never res.json, or the
+  // user is stranded on a bare JSON page with no way back in.
+  if (typeof error === "string") {
+    res.redirect(`${frontendUrl}/zoom?error=${encodeURIComponent(error)}`);
+    return;
+  }
+  if (typeof code !== "string" || typeof state !== "string") {
+    res.redirect(`${frontendUrl}/zoom?error=${encodeURIComponent("Missing code/state from Zoom")}`);
+    return;
+  }
+
+  let claims: { tenantId: string; userId: string };
+  try {
+    claims = jwt.verify(state, config.JWT_SECRET) as { tenantId: string; userId: string };
+  } catch {
+    res.redirect(`${frontendUrl}/zoom?error=${encodeURIComponent("Invalid or expired connect link — try again")}`);
+    return;
+  }
+
+  let tokens: Awaited<ReturnType<typeof exchangeZoomAuthCode>>;
+  let zoomUser: Awaited<ReturnType<typeof getZoomUserInfo>>;
+  try {
+    tokens = await exchangeZoomAuthCode(code);
+    zoomUser = await getZoomUserInfo(tokens.access_token);
+  } catch {
+    res.redirect(`${frontendUrl}/zoom?error=${encodeURIComponent("Zoom connection failed — try again")}`);
+    return;
+  }
+
+  await prisma.zoomConnection.upsert({
+    where: { tenantId_zoomUserId: { tenantId: claims.tenantId, zoomUserId: zoomUser.id } },
+    create: {
+      tenantId: claims.tenantId,
+      zoomUserId: zoomUser.id,
+      zoomAccountId: zoomUser.account_id,
+      accessTokenEnc: encryptSecret(tokens.access_token),
+      refreshTokenEnc: encryptSecret(tokens.refresh_token),
+      expiresAt: new Date(Date.now() + tokens.expires_in * 1000),
+      scopes: tokens.scope ?? ZOOM_SCOPES,
+      status: "ACTIVE",
+      connectedByUserId: claims.userId,
+    },
+    update: {
+      accessTokenEnc: encryptSecret(tokens.access_token),
+      refreshTokenEnc: encryptSecret(tokens.refresh_token),
+      expiresAt: new Date(Date.now() + tokens.expires_in * 1000),
+      scopes: tokens.scope ?? ZOOM_SCOPES,
+      status: "ACTIVE",
+    },
+  });
+
+  await writeAudit({
+    tenantId: claims.tenantId,
+    actorUserId: claims.userId,
+    entityType: "ZoomConnection",
+    entityId: zoomUser.id,
+    action: "CONNECTED",
+  });
+
+  res.redirect(`${frontendUrl}/zoom?connected=1`);
+}

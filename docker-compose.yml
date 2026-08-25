@@ -1,0 +1,31 @@
+services:
+  postgres:
+    image: postgres:16
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: zri
+      POSTGRES_PASSWORD: zri
+      POSTGRES_DB: zri
+    ports:
+      - "127.0.0.1:5442:5432" # explicit IPv4 bind — Docker Desktop/WSL2 has intermittently only bound IPv6, which Node can't reach via "localhost"
+    volumes:
+      - zri_pg_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U zri"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  redis:
+    image: redis:7
+    restart: unless-stopped
+    ports:
+      - "127.0.0.1:6379:6379"
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+volumes:
+  zri_pg_data:
