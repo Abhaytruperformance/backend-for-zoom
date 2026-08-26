@@ -7,7 +7,7 @@
   "rewrites": [
     {
       "source": "/api/:path*",
-      "destination": "https://zri-api.onrender.com/api/:path*"
+      "destination": "https://backend-for-zoom.onrender.com/api/:path*"
     },
     {
       "source": "/(.*)",
