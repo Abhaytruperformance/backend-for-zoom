@@ -1,0 +1,111 @@
+databases:
+  - name: zoom-notetaker-db
+    plan: free
+    databaseName: zri
+    user: zri
+
+services:
+  - type: redis
+    name: zoom-notetaker-redis
+    plan: free
+    ipAllowList: []
+
+  - type: web
+    name: zoom-notetaker-api
+    runtime: node
+    plan: free
+    buildCommand: npm install && npm run build --workspace=server
+    startCommand: npx prisma migrate deploy --schema=server/prisma/schema.prisma && node server/dist/index.js
+    envVars:
+      - key: NODE_ENV
+        value: production
+      - key: DATABASE_URL
+        fromDatabase:
+          name: zoom-notetaker-db
+          property: connectionString
+      - key: REDIS_URL
+        fromService:
+          type: redis
+          name: zoom-notetaker-redis
+          property: connectionString
+      - key: TOKEN_ENCRYPTION_KEY
+        sync: false
+      - key: JWT_SECRET
+        sync: false
+      - key: CORS_ALLOWED_ORIGINS
+        sync: false
+      - key: OPENAI_API_KEY
+        sync: false
+      - key: OPENAI_MODEL
+        value: gpt-4o-mini
+      - key: ZOOM_CLIENT_ID
+        sync: false
+      - key: ZOOM_CLIENT_SECRET
+        sync: false
+      - key: ZOOM_REDIRECT_URI
+        sync: false
+      - key: ZOOM_WEBHOOK_SECRET_TOKEN
+        sync: false
+      - key: GOOGLE_CLIENT_ID
+        sync: false
+      - key: GOOGLE_CLIENT_SECRET
+        sync: false
+      - key: GOOGLE_REDIRECT_URI
+        sync: false
+      - key: MICROSOFT_CLIENT_ID
+        sync: false
+      - key: MICROSOFT_CLIENT_SECRET
+        sync: false
+      - key: MICROSOFT_TENANT_ID
+        sync: false
+      - key: MICROSOFT_REDIRECT_URI
+        sync: false
+      - key: OUTBOUND_MESSAGE_ID_DOMAIN
+        sync: false
+      - key: SKIP_INTEGRATION
+        value: "true"
+
+  - type: worker
+    name: zoom-notetaker-worker
+    runtime: node
+    plan: free
+    buildCommand: npm install && npm run build --workspace=server
+    startCommand: node server/dist/jobs/worker.js
+    envVars:
+      - key: NODE_ENV
+        value: production
+      - key: DATABASE_URL
+        fromDatabase:
+          name: zoom-notetaker-db
+          property: connectionString
+      - key: REDIS_URL
+        fromService:
+          type: redis
+          name: zoom-notetaker-redis
+          property: connectionString
+      - key: TOKEN_ENCRYPTION_KEY
+        sync: false
+      - key: JWT_SECRET
+        sync: false
+      - key: OPENAI_API_KEY
+        sync: false
+      - key: OPENAI_MODEL
+        value: gpt-4o-mini
+      - key: ZOOM_CLIENT_ID
+        sync: false
+      - key: ZOOM_CLIENT_SECRET
+        sync: false
+      - key: GOOGLE_CLIENT_ID
+        sync: false
+      - key: GOOGLE_CLIENT_SECRET
+        sync: false
+      - key: MICROSOFT_CLIENT_ID
+        sync: false
+      - key: MICROSOFT_CLIENT_SECRET
+        sync: false
+      - key: MICROSOFT_TENANT_ID
+        sync: false
+      - key: OUTBOUND_MESSAGE_ID_DOMAIN
+        sync: false
+      - key: SKIP_INTEGRATION
+        value: "true"
