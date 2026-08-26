@@ -1,0 +1,122 @@
+# Render Blueprint — the API and the BullMQ worker as two long-running processes,
+# with Postgres and Redis attached. This is the shape the app actually needs: the
+# worker has to stay connected to Redis to pick up delayed jobs (the 5-minute
+# transcript fallback poll, and exponential backoff on retries), which a
+# request-scoped serverless runtime cannot do.
+#
+# Deploy: Render Dashboard -> New -> Blueprint -> point at this repo.
+# Then set the `sync: false` secrets below in the dashboard (they are deliberately
+# not committed).
+
+# Secrets shared by BOTH services. This has to be a group rather than per-service
+# values: the API encrypts Zoom/mailbox tokens and the worker decrypts them, so a
+# mismatched TOKEN_ENCRYPTION_KEY would surface much later as unreadable tokens
+# rather than as a startup error.
+envVarGroups:
+  - name: zri-shared
+    envVars:
+      - key: NODE_ENV
+        value: production
+      # Generate with: node -e "console.log(require('crypto').randomBytes(32).toString('base64'))"
+      - key: TOKEN_ENCRYPTION_KEY
+        sync: false
+      - key: JWT_SECRET
+        sync: false
+      - key: OPENAI_API_KEY
+        sync: false
+      - key: OPENAI_MODEL
+        value: gpt-4o-mini
+      - key: ZOOM_CLIENT_ID
+        sync: false
+      - key: ZOOM_CLIENT_SECRET
+        sync: false
+      - key: ZOOM_WEBHOOK_SECRET_TOKEN
+        sync: false
+      - key: GOOGLE_CLIENT_ID
+        sync: false
+      - key: GOOGLE_CLIENT_SECRET
+        sync: false
+      - key: MICROSOFT_CLIENT_ID
+        sync: false
+      - key: MICROSOFT_CLIENT_SECRET
+        sync: false
+      - key: MICROSOFT_TENANT_ID
+        value: common
+      - key: OUTBOUND_MESSAGE_ID_DOMAIN
+        sync: false
+      # All of these must be your PUBLIC Vercel origin, not the Render URL — the
+      # browser talks to Vercel, which proxies /api through to this service. Note
+      # the server derives its post-OAuth redirect target from the FIRST entry of
+      # CORS_ALLOWED_ORIGINS, so order matters here.
+      - key: CORS_ALLOWED_ORIGINS
+        sync: false
+      - key: ZOOM_REDIRECT_URI
+        sync: false
+      - key: GOOGLE_REDIRECT_URI
+        sync: false
+      - key: MICROSOFT_REDIRECT_URI
+        sync: false
+
+services:
+  - type: web
+    name: zri-api
+    runtime: node
+    plan: starter
+    region: oregon
+    branch: main
+    # Migrations run here, on the API only — deliberately not in the worker's build,
+    # so two services can't race to apply the same migration on a deploy.
+    buildCommand: npm install && npm run build --workspace server && npm run prisma:deploy --workspace server
+    startCommand: npm run start --workspace server
+    healthCheckPath: /health
+    envVars:
+      - fromGroup: zri-shared
+      - key: NODE_VERSION
+        value: "22"
+      - key: DATABASE_URL
+        fromDatabase:
+          name: zri-postgres
+          property: connectionString
+      - key: REDIS_URL
+        fromService:
+          type: redis
+          name: zri-redis
+          property: connectionString
+
+  - type: worker
+    name: zri-worker
+    runtime: node
+    plan: starter
+    region: oregon
+    branch: main
+    buildCommand: npm install && npm run build --workspace server
+    startCommand: npm run worker:start --workspace server
+    envVars:
+      - fromGroup: zri-shared
+      - key: NODE_VERSION
+        value: "22"
+      - key: DATABASE_URL
+        fromDatabase:
+          name: zri-postgres
+          property: connectionString
+      - key: REDIS_URL
+        fromService:
+          type: redis
+          name: zri-redis
+          property: connectionString
+
+  - type: redis
+    name: zri-redis
+    plan: starter
+    region: oregon
+    # BullMQ requires noeviction. Under any eviction policy Redis may drop job data
+    # under memory pressure, which silently loses queued meetings rather than erroring.
+    maxmemoryPolicy: noeviction
+    # Private network only — nothing outside these services should reach the queue.
+    ipAllowList: []
+
+databases:
+  - name: zri-postgres
+    plan: basic-256mb
+    region: oregon
+    postgresMajorVersion: "16"
