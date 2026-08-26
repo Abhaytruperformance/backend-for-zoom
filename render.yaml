@@ -86,7 +86,7 @@ services:
   - type: worker
     name: zri-worker
     runtime: node
-    plan: starter
+    plan: free
     region: oregon
     branch: main
     buildCommand: npm install && npm run build --workspace server
