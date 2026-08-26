@@ -1,17 +1,14 @@
-# Render Blueprint — the API and the BullMQ worker as two long-running processes,
-# with Postgres and Redis attached. This is the shape the app actually needs: the
-# worker has to stay connected to Redis to pick up delayed jobs (the 5-minute
-# transcript fallback poll, and exponential backoff on retries), which a
-# request-scoped serverless runtime cannot do.
+# Render Blueprint — free tier. Render's free plan has no Background Worker resource
+# type at all, so the BullMQ workers run in-process inside the API instead (gated by
+# RUN_WORKER_INLINE below — see server/src/index.ts). If budget allows a paid worker
+# later, that's the more correct shape: this API process spinning down on inactivity
+# (free-tier behavior) pauses job processing until the next request wakes it, whereas
+# a dedicated worker has no such gap.
 #
 # Deploy: Render Dashboard -> New -> Blueprint -> point at this repo.
 # Then set the `sync: false` secrets below in the dashboard (they are deliberately
 # not committed).
 
-# Secrets shared by BOTH services. This has to be a group rather than per-service
-# values: the API encrypts Zoom/mailbox tokens and the worker decrypts them, so a
-# mismatched TOKEN_ENCRYPTION_KEY would surface much later as unreadable tokens
-# rather than as a startup error.
 envVarGroups:
   - name: zri-shared
     envVars:
@@ -64,37 +61,18 @@ services:
     plan: free
     region: oregon
     branch: main
-    # Migrations run here, on the API only — deliberately not in the worker's build,
-    # so two services can't race to apply the same migration on a deploy.
-    buildCommand: npm install && npm run build --workspace server && npm run prisma:deploy --workspace server
+    # --include=dev: NODE_ENV=production above makes plain `npm install` skip
+    # devDependencies, which is where typescript/@types/prisma live — the build
+    # needs them even though the app runs in production.
+    buildCommand: npm install --include=dev && npm run build --workspace server && npm run prisma:deploy --workspace server
     startCommand: npm run start --workspace server
     healthCheckPath: /health
     envVars:
       - fromGroup: zri-shared
       - key: NODE_VERSION
         value: "22"
-      - key: DATABASE_URL
-        fromDatabase:
-          name: zri-postgres
-          property: connectionString
-      - key: REDIS_URL
-        fromService:
-          type: redis
-          name: zri-redis
-          property: connectionString
-
-  - type: worker
-    name: zri-worker
-    runtime: node
-    plan: free
-    region: oregon
-    branch: main
-    buildCommand: npm install && npm run build --workspace server
-    startCommand: npm run worker:start --workspace server
-    envVars:
-      - fromGroup: zri-shared
-      - key: NODE_VERSION
-        value: "22"
+      - key: RUN_WORKER_INLINE
+        value: "true"
       - key: DATABASE_URL
         fromDatabase:
           name: zri-postgres

@@ -37,3 +37,7 @@ app.use(errorHandler);
 app.listen(config.PORT, () => {
   console.log(`server listening on :${config.PORT}`);
 });
+
+if (config.RUN_WORKER_INLINE) {
+  await import("./jobs/worker.js");
+}

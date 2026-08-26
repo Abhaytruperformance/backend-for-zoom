@@ -32,6 +32,14 @@ const envSchema = z.object({
     .string()
     .default("true")
     .transform((v) => v === "true"),
+
+  // Render's free tier has no separate Background Worker resource type, so on that
+  // plan the API process also starts the BullMQ workers in-process. Leave this off
+  // locally — `npm run worker` runs it standalone there, as normal.
+  RUN_WORKER_INLINE: z
+    .string()
+    .default("false")
+    .transform((v) => v === "true"),
 });
 
 const parsed = envSchema.safeParse(process.env);
