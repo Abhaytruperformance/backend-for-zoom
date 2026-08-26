@@ -1,9 +1,9 @@
 {
   "$schema": "https://openapi.vercel.sh/vercel.json",
   "framework": null,
-  "installCommand": "npm install --include-workspace-root --workspaces",
-  "buildCommand": "npm run build --workspace client",
-  "outputDirectory": "client/dist",
+  "installCommand": "grep -q '\"workspaces\"' package.json 2>/dev/null || cd ..; sh scripts/vercel-install.sh",
+  "buildCommand": "ORIG=\"$PWD\"; grep -q '\"workspaces\"' package.json 2>/dev/null || cd ..; ORIG=\"$ORIG\" sh scripts/vercel-build.sh",
+  "outputDirectory": "dist",
   "rewrites": [
     {
       "source": "/api/:path*",
