@@ -1,0 +1,115 @@
+# Deploying
+
+Two hosts, on purpose: the client is static and belongs on a CDN, the server is not.
+`server/src/jobs/worker.ts` holds three BullMQ workers that sit connected to Redis
+waiting for jobs — including delayed ones (the 5-minute transcript fallback poll,
+and exponential backoff on retries). A request-scoped serverless runtime has nowhere
+to run that, so meetings would queue and never process. The server needs a host that
+runs persistent processes.
+
+| Piece | Host | Config |
+| --- | --- | --- |
+| React client | Vercel | [`vercel.json`](./vercel.json) |
+| API + BullMQ worker + Postgres + Redis | Render | [`render.yaml`](./render.yaml) |
+
+Render is one Blueprint file covering all four; Railway or Fly work equally well if
+you'd rather — the requirement is just "can run two long-lived processes."
+
+## 1. Server on Render
+
+Dashboard → **New → Blueprint** → point at this repo. It creates four resources from
+`render.yaml`: `zri-api` (web), `zri-worker` (background worker), `zri-redis`, and
+`zri-postgres`.
+
+`DATABASE_URL` and `REDIS_URL` are wired automatically. Everything marked `sync: false`
+must be set by hand, in the **`zri-shared` env group** so both services get identical
+values — the API encrypts Zoom/mailbox tokens and the worker decrypts them, so a
+mismatched `TOKEN_ENCRYPTION_KEY` fails late and confusingly rather than at startup.
+
+Generate the two secrets fresh — do not reuse the local ones:
+
+```bash
+node -e "console.log(require('crypto').randomBytes(32).toString('base64'))"  # TOKEN_ENCRYPTION_KEY
+node -e "console.log(require('crypto').randomBytes(48).toString('base64'))"  # JWT_SECRET
+```
+
+Migrations run in the API's build step (`prisma migrate deploy`), deliberately not in
+the worker's, so the two can't race to apply the same migration.
+
+## 2. Client on Vercel
+
+Point a Vercel project at this repo root. `vercel.json` sets `"framework": null` —
+that matters. Vercel's **Express preset compiles `server/src/index.ts` as a serverless
+function using its own TypeScript settings**, which fails on the helmet import and has
+nothing to do with your `server/tsconfig.json`. `framework: null` stops that.
+
+Then edit the rewrite destination in `vercel.json` to your real Render URL:
+
+```json
+{ "source": "/api/:path*", "destination": "https://zri-api.onrender.com/api/:path*" }
+```
+
+Vercel doesn't expand env vars inside `vercel.json`, so this is a literal edit.
+
+**Why proxy instead of pointing the client at Render directly.** It keeps the browser
+on one origin. The OAuth state nonce is an HttpOnly cookie, and cookies are scoped by
+hostname — split the UI and the callback across two domains and the callback never
+sees the cookie, so every connect attempt fails with "Invalid or expired connect link".
+Same reason the README routes everything through a single ngrok tunnel locally.
+
+## 3. Point the OAuth apps at the Vercel domain
+
+Every URL below is the **Vercel** origin, never the Render one — the browser only ever
+talks to Vercel.
+
+In the `zri-shared` env group:
+
+```
+CORS_ALLOWED_ORIGINS=https://<your-app>.vercel.app
+ZOOM_REDIRECT_URI=https://<your-app>.vercel.app/api/zoom/oauth/callback
+GOOGLE_REDIRECT_URI=https://<your-app>.vercel.app/api/mailbox/google/callback
+MICROSOFT_REDIRECT_URI=https://<your-app>.vercel.app/api/mailbox/microsoft/callback
+OUTBOUND_MESSAGE_ID_DOMAIN=<your-app>.vercel.app
+```
+
+`CORS_ALLOWED_ORIGINS` is load-bearing beyond CORS: the server derives its post-OAuth
+redirect target from the **first** entry, so if you list several, put the canonical one
+first.
+
+Then update the same redirect URIs in each provider console — they're validated
+server-side, so a mismatch is rejected before your code runs:
+
+- **Zoom Marketplace** → OAuth redirect URL *and* the webhook endpoint
+  (`https://<your-app>.vercel.app/api/zoom/webhooks`)
+- **Google Cloud Console** → Authorized redirect URIs
+- **Microsoft Entra** → Redirect URIs
+
+A real HTTPS domain replaces the ngrok tunnel entirely.
+
+## 4. Verify
+
+```bash
+curl https://<your-app>.vercel.app/api/auth/register \
+  -H 'Content-Type: application/json' \
+  -d '{"tenantName":"Acme","email":"you@example.com","password":"<pick-one>"}'
+```
+
+A `201` proves the whole chain: Vercel → rewrite → Render → Postgres.
+
+Check `zri-worker`'s logs for `workers started`. Without that line nothing will process,
+however healthy the API looks.
+
+## Known gaps before real users
+
+- **`bcrypt` is a native module.** Some hosts skip install scripts (Vercel's build log
+  lists it under `allow-scripts`), which leaves it without a binary and makes every
+  login 500. Render runs install scripts normally, so it should build — if you ever see
+  `invalid ELF header` or a missing `bcrypt_lib.node`, swap to `bcryptjs`, which is
+  pure JS and produces interchangeable hashes.
+- **Password reset tokens are logged, not emailed.** Anyone with log access can take
+  over an account. Wire up real delivery before letting anyone else in.
+- **`TOKEN_ENCRYPTION_KEY` is a single static key** with no rotation path. Whoever reads
+  the env reads every connected mailbox and Zoom account.
+- **Rate limiting is in-process.** Fine on a single Render instance; if you scale the
+  API past one, move `express-rate-limit` to a Redis store or the limits multiply.
+- **Rotate any credential that has been pasted into a chat, ticket, or terminal.**

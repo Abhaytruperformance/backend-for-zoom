@@ -1,5 +1,6 @@
 import { config } from "../../config.js";
 import { getValidMailboxAccessToken, markValidated } from "./tokens.js";
+import type { ReconcileResult } from "./reconcile.js";
 
 function microsoftRefreshRequest(refreshToken: string) {
   return {
@@ -59,16 +60,21 @@ export async function sendViaGraph(params: {
   return { providerMessageId: null };
 }
 
-export async function reconcileGraphSend(userId: string, internetMessageId: string): Promise<{ found: boolean; providerMessageId?: string }> {
+export async function reconcileGraphSend(userId: string, internetMessageId: string): Promise<ReconcileResult> {
   const { accessToken } = await getValidMailboxAccessToken(userId, "MICROSOFT", microsoftRefreshRequest);
-  const search = encodeURIComponent(`"${internetMessageId}"`);
-  const res = await fetch(`https://graph.microsoft.com/v1.0/me/mailFolders/sentitems/messages?$search=${search}&$select=id`, {
-    headers: { Authorization: `Bearer ${accessToken}`, ConsistencyLevel: "eventual" },
-  });
-  if (!res.ok) return { found: false };
+  // Filter on the header directly rather than full-text $search — exact, and it does not
+  // depend on the search index having caught up with a send from seconds ago.
+  const filter = encodeURIComponent(`internetMessageId eq '<${internetMessageId}>'`);
+  const res = await fetch(
+    `https://graph.microsoft.com/v1.0/me/mailFolders/sentitems/messages?$filter=${filter}&$select=id`,
+    { headers: { Authorization: `Bearer ${accessToken}` } }
+  );
+  // A failed lookup is "unknown", never "not sent" — see reconcile.ts.
+  if (!res.ok) return { status: "unknown", reason: `sentitems lookup failed: ${res.status}` };
+
   const body = (await res.json()) as { value?: Array<{ id: string }> };
   if (body.value && body.value.length > 0) {
-    return { found: true, providerMessageId: body.value[0].id };
+    return { status: "found", providerMessageId: body.value[0].id };
   }
-  return { found: false };
+  return { status: "not_found" };
 }

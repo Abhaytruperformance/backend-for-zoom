@@ -75,7 +75,7 @@ export default function Accounts() {
         <SkeletonList rows={3} />
       ) : accounts.length === 0 ? (
         <EmptyState
-          icon="🏢"
+          icon="building"
           title="No accounts yet"
           description="Create one manually, or wait for a meeting's participant email to match a known contact or domain."
         />

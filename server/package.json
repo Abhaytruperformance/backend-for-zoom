@@ -4,13 +4,15 @@
   "type": "module",
   "scripts": {
     "dev": "tsx watch --env-file=.env src/index.ts",
-    "build": "tsc -p tsconfig.json",
-    "start": "node --env-file=.env dist/index.js",
+    "build": "prisma generate && tsc -p tsconfig.json",
+    "start": "node --env-file-if-exists=.env dist/index.js",
     "worker": "tsx watch --env-file=.env src/jobs/worker.ts",
+    "worker:start": "node --env-file-if-exists=.env dist/jobs/worker.js",
     "test": "vitest run tests/unit",
     "test:integration": "vitest run tests/integration",
     "prisma:generate": "prisma generate",
-    "prisma:migrate": "prisma migrate dev"
+    "prisma:migrate": "prisma migrate dev",
+    "prisma:deploy": "prisma migrate deploy"
   },
   "dependencies": {
     "@prisma/client": "^5.20.0",

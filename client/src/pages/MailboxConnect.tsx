@@ -1,12 +1,13 @@
 import { useEffect, useState } from "react";
 import { useSearchParams } from "react-router-dom";
 import { api } from "../lib/api.js";
+import { Icon, type IconName } from "../components/Icon.js";
 
 interface MailboxStatus { provider: "GOOGLE" | "MICROSOFT"; email: string; status: string }
 
-const PROVIDER_META = {
-  GOOGLE: { label: "Gmail", icon: "✉️", connectLabel: "google" as const },
-  MICROSOFT: { label: "Microsoft 365", icon: "📧", connectLabel: "microsoft" as const },
+const PROVIDER_META: Record<"GOOGLE" | "MICROSOFT", { label: string; icon: IconName; connectLabel: "google" | "microsoft" }> = {
+  GOOGLE: { label: "Gmail", icon: "mail", connectLabel: "google" },
+  MICROSOFT: { label: "Microsoft 365", icon: "mail-open", connectLabel: "microsoft" },
 };
 
 export default function MailboxConnect() {
@@ -44,7 +45,7 @@ export default function MailboxConnect() {
         return (
           <div className="card" key={key}>
             <div style={{ display: "flex", alignItems: "center", gap: "0.75rem", marginBottom: "1rem" }}>
-              <span style={{ fontSize: "1.4rem" }}>{meta.icon}</span>
+              <span className="provider-icon"><Icon name={meta.icon} size={20} /></span>
               <div>
                 <div style={{ fontWeight: 600 }}>{meta.label}</div>
                 {mailboxes === null ? (

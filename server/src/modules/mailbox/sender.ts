@@ -4,6 +4,7 @@ import { transitionMeeting } from "../meetings/stateMachine.js";
 import { sendViaGmail, reconcileGmailSend } from "./gmail.js";
 import { sendViaGraph, reconcileGraphSend } from "./graph.js";
 import { markReauthRequired } from "./tokens.js";
+import type { ReconcileResult } from "./reconcile.js";
 
 const MAX_RECONCILIATION_ATTEMPTS = 5;
 
@@ -38,11 +39,28 @@ export async function sendApprovedEmail(snapshotId: string): Promise<void> {
       await prisma.emailSendAttempt.update({ where: { id: attempt.id }, data: { status: "NEEDS_RECONCILIATION" } });
       return; // give up on auto-reconciliation; surfaced in UI for a human decision
     }
-    const found = await reconcile(userId, attempt.internetMessageIdHeader).catch(
-      () => ({ found: false, providerMessageId: undefined }) as { found: boolean; providerMessageId?: string }
-    );
-    if (found.found) {
-      await markSent(attempt.id, snapshot.draft.meetingId, tenantId, found.providerMessageId ?? null);
+    const outcome: ReconcileResult = await reconcile(userId, attempt.internetMessageIdHeader).catch((err) => ({
+      status: "unknown" as const,
+      reason: err instanceof Error ? err.message : "reconciliation threw",
+    }));
+
+    if (outcome.status === "found") {
+      await markSent(attempt.id, snapshot.draft.meetingId, tenantId, outcome.providerMessageId ?? null);
+      return;
+    }
+    if (outcome.status === "unknown") {
+      // We could not establish whether the previous attempt landed. Sending now risks a
+      // duplicate in a client's inbox, which is worse than a delayed follow-up — park it for
+      // a human instead of guessing.
+      await prisma.emailSendAttempt.update({
+        where: { id: attempt.id },
+        data: {
+          status: "NEEDS_RECONCILIATION",
+          attempts: { increment: 1 },
+          lastError: `could not verify previous send: ${outcome.reason}`,
+          nextRetryAt: new Date(Date.now() + 5 * 60_000),
+        },
+      });
       return;
     }
   }

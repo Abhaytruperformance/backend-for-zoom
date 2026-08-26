@@ -1,12 +1,15 @@
 import { useEffect, useState } from "react";
 import { useSearchParams } from "react-router-dom";
 import { api } from "../lib/api.js";
+import { StatusDot } from "../components/Icon.js";
 
-const STATUS_COPY: Record<string, { badge: string; icon: string; note: string }> = {
-  ACTIVE: { badge: "ok", icon: "🟢", note: "Connected and healthy." },
-  REAUTH_REQUIRED: { badge: "err", icon: "🟠", note: "Access expired — reconnect to keep meetings flowing in." },
-  REVOKED: { badge: "err", icon: "🔴", note: "Access was revoked. Reconnect to resume." },
-  NOT_CONNECTED: { badge: "", icon: "⚪", note: "Not connected yet." },
+type Tone = "ok" | "warn" | "err" | "idle";
+
+const STATUS_COPY: Record<string, { badge: string; tone: Tone; note: string }> = {
+  ACTIVE: { badge: "ok", tone: "ok", note: "Connected and healthy." },
+  REAUTH_REQUIRED: { badge: "err", tone: "warn", note: "Access expired — reconnect to keep meetings flowing in." },
+  REVOKED: { badge: "err", tone: "err", note: "Access was revoked. Reconnect to resume." },
+  NOT_CONNECTED: { badge: "", tone: "idle", note: "Not connected yet." },
 };
 
 export default function ZoomConnect() {
@@ -39,7 +42,7 @@ export default function ZoomConnect() {
           <div className="skeleton skeleton-line" style={{ width: "40%" }} />
         ) : (
           <div style={{ display: "flex", alignItems: "center", gap: "0.75rem", marginBottom: "1rem" }}>
-            <span style={{ fontSize: "1.4rem" }}>{copy!.icon}</span>
+            <StatusDot tone={copy!.tone} />
             <div>
               <div><span className={`badge ${copy!.badge}`}>{status.status.replace(/_/g, " ")}</span></div>
               <div className="muted" style={{ fontSize: "var(--text-caption)", marginTop: "0.2rem" }}>{copy!.note}</div>

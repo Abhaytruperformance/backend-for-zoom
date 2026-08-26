@@ -51,7 +51,7 @@ export default function Meetings() {
         <SkeletonList rows={4} />
       ) : meetings.length === 0 ? (
         <EmptyState
-          icon="📅"
+          icon="calendar"
           title="No meetings yet"
           description="Connect Zoom and end a recorded meeting — it'll show up here once the transcript is processed."
         />

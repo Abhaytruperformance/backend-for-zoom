@@ -23,11 +23,16 @@ export const ZOOM_SCOPES = [
 
 export function zoomConnectHandler(req: Request, res: Response): void {
   const user = req.user!;
-  const state = issueOAuthState(res, STATE_COOKIE, { tenantId: user.tenantId, userId: user.userId });
+  const { state, codeChallenge } = issueOAuthState(res, STATE_COOKIE, { tenantId: user.tenantId, userId: user.userId });
   const url = new URL("https://zoom.us/oauth/authorize");
   url.searchParams.set("response_type", "code");
   url.searchParams.set("client_id", config.ZOOM_CLIENT_ID);
   url.searchParams.set("redirect_uri", config.ZOOM_REDIRECT_URI);
+  // Actually request the least-privilege list. Previously this was never sent, so Zoom
+  // granted whatever the Marketplace app had configured and ZOOM_SCOPES was decorative.
+  url.searchParams.set("scope", ZOOM_SCOPES);
+  url.searchParams.set("code_challenge", codeChallenge);
+  url.searchParams.set("code_challenge_method", "S256");
   url.searchParams.set("state", state);
   res.json({ authorizeUrl: url.toString() });
 }
@@ -56,7 +61,7 @@ export async function zoomCallbackHandler(req: Request, res: Response): Promise<
   let tokens: Awaited<ReturnType<typeof exchangeZoomAuthCode>>;
   let zoomUser: Awaited<ReturnType<typeof getZoomUserInfo>>;
   try {
-    tokens = await exchangeZoomAuthCode(code);
+    tokens = await exchangeZoomAuthCode(code, claims.codeVerifier);
     zoomUser = await getZoomUserInfo(tokens.access_token);
   } catch {
     res.redirect(`${frontendUrl}/zoom?error=${encodeURIComponent("Zoom connection failed — try again")}`);
