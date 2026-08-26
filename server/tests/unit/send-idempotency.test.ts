@@ -55,7 +55,7 @@ describe.skipIf(!dbAvailable)("sendApprovedEmail — Test 7: a lost/ambiguous pr
     sendViaGmail.mockRejectedValueOnce(Object.assign(new Error("timeout"), { ambiguous: true }));
     await expect(sendApprovedEmail(snapshot.id)).rejects.toThrow();
 
-    reconcileGmailSend.mockResolvedValueOnce({ found: true, providerMessageId: "gmail-123" });
+    reconcileGmailSend.mockResolvedValueOnce({ status: "found", providerMessageId: "gmail-123" });
     await sendApprovedEmail(snapshot.id);
 
     expect(sendViaGmail).toHaveBeenCalledTimes(1); // still just the one original attempt — retry never re-sent
@@ -80,6 +80,44 @@ describe.skipIf(!dbAvailable)("sendApprovedEmail — Test 7: a lost/ambiguous pr
 
     expect(sendViaGmail).not.toHaveBeenCalled();
     expect(reconcileGmailSend).not.toHaveBeenCalled();
+
+    await cleanupTenant(tenant.id);
+  });
+
+  it("refuses to re-send when reconciliation cannot determine whether the first attempt landed", async () => {
+    const { tenant, user } = await createTenantWithUser("send4");
+    const { snapshot, attempt } = await makeApprovedSnapshot(tenant.id, user.id);
+
+    sendViaGmail.mockRejectedValueOnce(Object.assign(new Error("timeout"), { ambiguous: true }));
+    await expect(sendApprovedEmail(snapshot.id)).rejects.toThrow();
+
+    // The provider errors on the lookup — we genuinely do not know if the message went out.
+    // Previously this collapsed to "not found" and the retry sent a second copy to the client.
+    reconcileGmailSend.mockResolvedValueOnce({ status: "unknown", reason: "SENT list failed: 403" });
+    await sendApprovedEmail(snapshot.id);
+
+    expect(sendViaGmail).toHaveBeenCalledTimes(1); // crucially NOT 2
+    const after = await prisma.emailSendAttempt.findUniqueOrThrow({ where: { id: attempt.id } });
+    expect(after.status).toBe("NEEDS_RECONCILIATION");
+    expect(after.lastError).toContain("could not verify previous send");
+
+    await cleanupTenant(tenant.id);
+  });
+
+  it("does re-send when reconciliation positively confirms the message is absent", async () => {
+    const { tenant, user } = await createTenantWithUser("send5");
+    const { snapshot, attempt } = await makeApprovedSnapshot(tenant.id, user.id);
+
+    sendViaGmail.mockRejectedValueOnce(Object.assign(new Error("timeout"), { ambiguous: true }));
+    await expect(sendApprovedEmail(snapshot.id)).rejects.toThrow();
+
+    reconcileGmailSend.mockResolvedValueOnce({ status: "not_found" });
+    sendViaGmail.mockResolvedValueOnce({ providerMessageId: "gmail-456" });
+    await sendApprovedEmail(snapshot.id);
+
+    expect(sendViaGmail).toHaveBeenCalledTimes(2); // the retry is correct here
+    const after = await prisma.emailSendAttempt.findUniqueOrThrow({ where: { id: attempt.id } });
+    expect(after.status).toBe("SENT");
 
     await cleanupTenant(tenant.id);
   });

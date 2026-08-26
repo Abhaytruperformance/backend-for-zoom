@@ -12,7 +12,25 @@ export const zoomWebhookRouter = Router();
 zoomWebhookRouter.use(webhookRateLimit);
 zoomWebhookRouter.use(express.text({ type: "*/*", limit: "2mb" }));
 
+/** Zoom rejects a webhook it considers stale; so do we. Bounds how long a captured request stays replayable. */
+const MAX_WEBHOOK_SKEW_MS = 5 * 60 * 1000;
+
+/**
+ * Zoom has sent x-zm-request-timestamp as both epoch seconds (10 digits) and epoch
+ * milliseconds (13) across app types and doc revisions, so normalise on magnitude rather
+ * than betting on one. Guessing wrong in the strict direction would reject every genuine
+ * webhook and silently stop all ingestion.
+ */
+export function isFreshTimestamp(timestamp: string, now: number = Date.now()): boolean {
+  const raw = Number(timestamp);
+  if (!Number.isFinite(raw) || raw <= 0) return false;
+  const ms = raw < 1e11 ? raw * 1000 : raw;
+  return Math.abs(now - ms) <= MAX_WEBHOOK_SKEW_MS;
+}
+
 export function verifyZoomSignature(rawBody: string, timestamp: string, signature: string): boolean {
+  if (!isFreshTimestamp(timestamp)) return false;
+
   const message = `v0:${timestamp}:${rawBody}`;
   const hash = createHmac("sha256", config.ZOOM_WEBHOOK_SECRET_TOKEN).update(message).digest("hex");
   const expected = `v0=${hash}`;
@@ -31,18 +49,28 @@ zoomWebhookRouter.post("/", async (req, res) => {
     return;
   }
 
-  // Zoom's one-time endpoint URL validation handshake — no signature to check yet.
-  if (payload.event === "endpoint.url_validation") {
-    const plainToken = payload.payload?.plainToken as string;
-    const encryptedToken = createHmac("sha256", config.ZOOM_WEBHOOK_SECRET_TOKEN).update(plainToken).digest("hex");
-    res.status(200).json({ plainToken, encryptedToken });
-    return;
-  }
-
+  // Signature first, for EVERY event including the url_validation handshake. Zoom signs the
+  // validation request too, so there is no reason to exempt it — and exempting it is what
+  // made this endpoint forgeable: the handshake HMACs an attacker-supplied plainToken with
+  // the webhook secret and hands back the digest. Feeding it the exact string the verifier
+  // checks ("v0:<timestamp>:<body>") returned a valid signature for any forged event, so
+  // anyone on the internet could inject meeting.ended/participant_joined into any tenant.
   const timestamp = req.header("x-zm-request-timestamp");
   const signature = req.header("x-zm-signature");
   if (!timestamp || !signature || !verifyZoomSignature(rawBody, timestamp, signature)) {
     res.status(401).json({ error: "Invalid webhook signature" });
+    return;
+  }
+
+  // Zoom's one-time endpoint URL validation handshake, now behind the signature check.
+  if (payload.event === "endpoint.url_validation") {
+    const plainToken = payload.payload?.plainToken;
+    if (typeof plainToken !== "string") {
+      res.status(400).json({ error: "Missing plainToken" });
+      return;
+    }
+    const encryptedToken = createHmac("sha256", config.ZOOM_WEBHOOK_SECRET_TOKEN).update(plainToken).digest("hex");
+    res.status(200).json({ plainToken, encryptedToken });
     return;
   }
 

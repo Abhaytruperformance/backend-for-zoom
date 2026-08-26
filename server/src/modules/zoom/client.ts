@@ -90,12 +90,14 @@ export async function listMeetingRecordings(tenantId: string, meetingId: string)
 /** Downloads the transcript VTT file content — cloud_recording:read:content scope covers the download_url. */
 export async function downloadTranscriptVtt(tenantId: string, downloadUrl: string): Promise<string> {
   const token = await getValidZoomAccessToken(tenantId);
-  const res = await fetch(`${downloadUrl}?access_token=${encodeURIComponent(token)}`);
+  // Bearer header rather than ?access_token= — a token in a query string ends up in proxy
+  // logs, browser/CDN caches and Referer headers, and this one can read every recording.
+  const res = await fetch(downloadUrl, { headers: { Authorization: `Bearer ${token}` } });
   if (!res.ok) throw new Error(`Zoom transcript download failed: ${res.status}`);
   return res.text();
 }
 
-export async function exchangeZoomAuthCode(code: string) {
+export async function exchangeZoomAuthCode(code: string, codeVerifier: string) {
   const basicAuth = Buffer.from(`${config.ZOOM_CLIENT_ID}:${config.ZOOM_CLIENT_SECRET}`).toString("base64");
   const res = await fetch(ZOOM_OAUTH_TOKEN_URL, {
     method: "POST",
@@ -104,6 +106,7 @@ export async function exchangeZoomAuthCode(code: string) {
       grant_type: "authorization_code",
       code,
       redirect_uri: config.ZOOM_REDIRECT_URI,
+      code_verifier: codeVerifier,
     }),
   });
   if (!res.ok) throw new Error(`Zoom OAuth code exchange failed: ${res.status}`);

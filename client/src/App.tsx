@@ -1,4 +1,4 @@
-import { NavLink, Navigate, Route, Routes } from "react-router-dom";
+import { NavLink, Navigate, Outlet, Route, Routes } from "react-router-dom";
 import { useState } from "react";
 import { getToken, clearToken } from "./lib/api.js";
 import Login from "./pages/Login.js";
@@ -26,34 +26,65 @@ function RedirectIfAuthed({ children }: { children: React.ReactNode }) {
   return <>{children}</>;
 }
 
-export default function App() {
-  const [, forceRender] = useState(0);
-  const authed = !!getToken();
-
+/**
+ * Chrome for the signed-in app: nav plus the centred, max-width content column.
+ *
+ * Login deliberately sits OUTSIDE this as a sibling route rather than inside it. The auth
+ * screen paints a full-bleed background, and nesting it in <main> clipped that background
+ * to the 900px column — it rendered as a tinted rectangle with hard edges floating on the
+ * page canvas, and `min-height: 100vh` inside a padded parent also pushed the page into a
+ * needless scroll.
+ */
+function AppShell({ onLogout }: { onLogout: () => void }) {
   return (
     <>
-      {authed && (
+      {!!getToken() && (
         <nav>
-          <strong>Zoom Relationship Intelligence</strong>
+          <span className="brand">
+            <img src="/logo.png" alt="Tru Performance" />
+          </span>
           <NavLink to="/dashboard">Dashboard</NavLink>
           <NavLink to="/meetings">Meetings</NavLink>
           <NavLink to="/accounts">Accounts</NavLink>
           <NavLink to="/zoom">Zoom</NavLink>
           <NavLink to="/mailbox">Mailbox</NavLink>
           <span className="spacer" />
-          <button
-            onClick={() => {
-              clearToken();
-              forceRender((n) => n + 1);
-            }}
-          >
-            Log out
-          </button>
+          <button onClick={onLogout}>Log out</button>
         </nav>
       )}
       <main>
-        <Routes>
-          <Route path="/login" element={<RedirectIfAuthed><Login onLoggedIn={() => forceRender((n) => n + 1)} /></RedirectIfAuthed>} />
+        <Outlet />
+      </main>
+    </>
+  );
+}
+
+export default function App() {
+  const [, forceRender] = useState(0);
+  const authed = !!getToken();
+  const rerender = () => forceRender((n) => n + 1);
+
+  return (
+    <>
+      <Routes>
+        <Route
+          path="/login"
+          element={
+            <RedirectIfAuthed>
+              <Login onLoggedIn={rerender} />
+            </RedirectIfAuthed>
+          }
+        />
+        <Route
+          element={
+            <AppShell
+              onLogout={() => {
+                clearToken();
+                rerender();
+              }}
+            />
+          }
+        >
           <Route path="/dashboard" element={<RequireAuth><Dashboard /></RequireAuth>} />
           <Route path="/meetings" element={<RequireAuth><Meetings /></RequireAuth>} />
           <Route path="/meetings/:id" element={<RequireAuth><MeetingDetail /></RequireAuth>} />
@@ -63,8 +94,8 @@ export default function App() {
           <Route path="/zoom" element={<RequireAuth><ZoomConnect /></RequireAuth>} />
           <Route path="/mailbox" element={<RequireAuth><MailboxConnect /></RequireAuth>} />
           <Route path="*" element={<Navigate to={authed ? "/dashboard" : "/login"} replace />} />
-        </Routes>
-      </main>
+        </Route>
+      </Routes>
       <ToastStack />
     </>
   );

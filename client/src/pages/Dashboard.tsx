@@ -123,7 +123,7 @@ export default function Dashboard() {
         {openActions === null ? (
           <SkeletonList rows={3} />
         ) : openActions.length === 0 ? (
-          <EmptyState icon="✅" title="Nothing open" description="Every action item across your accounts is resolved." />
+          <EmptyState icon="check-circle" title="Nothing open" description="Every action item across your accounts is resolved." />
         ) : (
           <table>
             <thead><tr><th>Action</th><th>Owner</th><th>Due</th></tr></thead>

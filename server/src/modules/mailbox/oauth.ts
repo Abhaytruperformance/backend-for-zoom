@@ -30,7 +30,10 @@ export function googleConnectHandler(req: Request, res: Response): void {
   url.searchParams.set("scope", GOOGLE_SCOPES);
   url.searchParams.set("access_type", "offline");
   url.searchParams.set("prompt", "consent");
-  url.searchParams.set("state", issueOAuthState(res, GOOGLE_STATE_COOKIE, { userId: req.user!.userId, tenantId: req.user!.tenantId }));
+  const { state, codeChallenge } = issueOAuthState(res, GOOGLE_STATE_COOKIE, { userId: req.user!.userId, tenantId: req.user!.tenantId });
+  url.searchParams.set("code_challenge", codeChallenge);
+  url.searchParams.set("code_challenge_method", "S256");
+  url.searchParams.set("state", state);
   res.json({ authorizeUrl: url.toString() });
 }
 
@@ -60,6 +63,7 @@ export async function googleCallbackHandler(req: Request, res: Response): Promis
         client_id: config.GOOGLE_CLIENT_ID,
         client_secret: config.GOOGLE_CLIENT_SECRET,
         redirect_uri: config.GOOGLE_REDIRECT_URI,
+        code_verifier: claims.codeVerifier,
       }),
     });
     if (!tokenRes.ok) {
@@ -114,7 +118,10 @@ export function microsoftConnectHandler(req: Request, res: Response): void {
   url.searchParams.set("redirect_uri", config.MICROSOFT_REDIRECT_URI);
   url.searchParams.set("response_type", "code");
   url.searchParams.set("scope", MICROSOFT_SCOPES);
-  url.searchParams.set("state", issueOAuthState(res, MICROSOFT_STATE_COOKIE, { userId: req.user!.userId, tenantId: req.user!.tenantId }));
+  const { state, codeChallenge } = issueOAuthState(res, MICROSOFT_STATE_COOKIE, { userId: req.user!.userId, tenantId: req.user!.tenantId });
+  url.searchParams.set("code_challenge", codeChallenge);
+  url.searchParams.set("code_challenge_method", "S256");
+  url.searchParams.set("state", state);
   res.json({ authorizeUrl: url.toString() });
 }
 
@@ -145,6 +152,7 @@ export async function microsoftCallbackHandler(req: Request, res: Response): Pro
         client_secret: config.MICROSOFT_CLIENT_SECRET,
         redirect_uri: config.MICROSOFT_REDIRECT_URI,
         scope: MICROSOFT_SCOPES,
+        code_verifier: claims.codeVerifier,
       }),
     });
     if (!tokenRes.ok) {

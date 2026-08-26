@@ -1,5 +1,12 @@
+/* Design tokens sourced from truperformance.us — brand orange #FF5A24,
+   ink #191B1F, warm tint #FFF6F3, and the Inter/Outfit type pairing. */
 :root {
   color-scheme: light;
+
+  /* Brand faces: Inter carries headings + body, Outfit the small labels/eyebrows —
+     the same split the marketing site uses (.hero-title = Inter, .hero-eyebrow = Outfit) */
+  --font-sans: "Inter", -apple-system, BlinkMacSystemFont, "Segoe UI", Helvetica, Arial, sans-serif;
+  --font-label: "Outfit", "Inter", -apple-system, BlinkMacSystemFont, "Segoe UI", Helvetica, Arial, sans-serif;
 
   /* Type scale — iOS's actual scale, not generic web defaults */
   --text-caption: 0.8125rem;   /* 13px */
@@ -8,17 +15,18 @@
   --text-title3: 1.25rem;      /* 20px */
   --text-title1: 1.75rem;      /* 28px */
 
-  /* Tinted neutral scale — warm-gray, never pure black/white */
-  --gray-50: #f7f7f8;
-  --gray-100: #efeff1;
-  --gray-200: #e3e3e7;
-  --gray-300: #d1d1d8;
-  --gray-400: #a8a8b3;
-  --gray-500: #7c7c88;
-  --gray-600: #5c5c68;
-  --gray-700: #3f3f4a;
-  --gray-800: #26262f;
-  --gray-900: #1a1a21;
+  /* Neutral scale anchored on the brand's own greys: ink #191B1F, #646464,
+     #7A7A7A, #EDEDED, #F9F9F9. Reads warmer/flatter than the old blue-tinted ramp. */
+  --gray-50: #f9f9f9;
+  --gray-100: #f2f2f2;
+  --gray-200: #ededed;
+  --gray-300: #dcdcdd;
+  --gray-400: #a9a9ab;
+  --gray-500: #7a7a7a;
+  --gray-600: #646464;
+  --gray-700: #45464a;
+  --gray-800: #26272b;
+  --gray-900: #191b1f; /* brand ink */
 
   --canvas: var(--gray-50);
   --surface: #ffffff;
@@ -26,12 +34,16 @@
   --border: var(--gray-200);
   --border-strong: var(--gray-300);
   --text: var(--gray-900);
-  --text-muted: var(--gray-600); /* gray-500 measured ~4.1:1 on white, below the 4.5:1 floor for 15px text */
+  --text-muted: var(--gray-600); /* #646464 → 5.7:1 on white, clears the 4.5:1 floor for 15px text */
 
-  /* Single accent — iOS system blue, primary actions only */
-  --accent: #0a84ff;
-  --accent-tint: #e8f2ff;
-  --accent-pressed: #0870d9;
+  /* Brand orange — the exact TruPerformance value, used everywhere: fills, text,
+     rings, gradients. White-on-orange measures 3.12:1, so primary button labels run
+     at weight 600 to hold up; --accent-deep is on hand for small orange text on
+     white (4.95:1) where the vivid value would be too light to read. */
+  --accent: #ff5a24;
+  --accent-deep: #c7431a;
+  --accent-tint: #fff6f3; /* the site's warm tint, verbatim */
+  --accent-pressed: #e04f20;
 
   --ok: #1e8e5a;
   --ok-tint: #e5f6ee;
@@ -55,10 +67,11 @@
   --radius-lg: 20px;
   --radius-pill: 999px;
 
-  /* Soft, diffuse, multi-layer elevation — never a single hard drop shadow */
-  --shadow-sm: 0 1px 2px rgba(20, 20, 30, 0.04), 0 1px 1px rgba(20, 20, 30, 0.03);
-  --shadow-md: 0 4px 12px rgba(20, 20, 30, 0.06), 0 1px 3px rgba(20, 20, 30, 0.05);
-  --shadow-lg: 0 12px 32px rgba(20, 20, 30, 0.10), 0 2px 6px rgba(20, 20, 30, 0.06);
+  /* Soft, diffuse, multi-layer elevation — never a single hard drop shadow.
+     Tinted with the brand ink rather than a neutral blue-black. */
+  --shadow-sm: 0 1px 2px rgba(25, 27, 31, 0.05), 0 1px 1px rgba(25, 27, 31, 0.03);
+  --shadow-md: 0 4px 12px rgba(25, 27, 31, 0.07), 0 1px 3px rgba(25, 27, 31, 0.05);
+  --shadow-lg: 0 12px 32px rgba(25, 27, 31, 0.11), 0 2px 6px rgba(25, 27, 31, 0.06);
 
   --ease-out: cubic-bezier(0.16, 1, 0.3, 1);
 }
@@ -71,7 +84,8 @@
 
 body {
   margin: 0;
-  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Helvetica, Arial, sans-serif;
+  font-family: var(--font-sans);
+  font-feature-settings: "cv11"; /* Inter: disambiguated single-storey a/g at UI sizes */
   font-size: var(--text-body);
   line-height: 1.47;
   background: var(--canvas);
@@ -97,13 +111,14 @@ nav {
 
 @media (max-width: 640px) {
   nav { padding: var(--space-2) var(--space-3); }
-  nav strong { width: 100%; margin-right: 0; margin-bottom: var(--space-1); }
+  nav .brand { width: 100%; margin-right: 0; margin-bottom: var(--space-1); }
   nav .spacer { display: none; }
   main { padding: var(--space-4) var(--space-3); }
   .stat-row { grid-template-columns: repeat(2, 1fr); }
 }
 
-nav strong { font-size: var(--text-secondary); font-weight: 600; margin-right: var(--space-4); letter-spacing: -0.01em; }
+nav .brand { display: inline-flex; align-items: center; margin-right: var(--space-4); }
+nav .brand img { display: block; height: 22px; width: auto; }
 
 nav a {
   color: var(--text-muted);
@@ -115,7 +130,7 @@ nav a {
   transition: background-color 200ms var(--ease-out), color 200ms var(--ease-out);
 }
 nav a:hover { color: var(--text); background: var(--gray-100); }
-nav a.active { color: var(--accent); background: var(--accent-tint); }
+nav a.active { color: var(--accent-deep); background: var(--accent-tint); }
 nav .spacer { flex: 1; }
 
 main { max-width: 900px; margin: 0 auto; padding: var(--space-6) var(--space-5); animation: fade-in 300ms var(--ease-out); }
@@ -138,6 +153,7 @@ main { max-width: 900px; margin: 0 auto; padding: var(--space-6) var(--space-5);
 h1 { font-size: var(--text-title1); font-weight: 700; line-height: 1.15; letter-spacing: -0.02em; margin: 0 0 var(--space-1); }
 h2 { font-size: var(--text-title3); font-weight: 600; line-height: 1.15; letter-spacing: -0.01em; margin: 0 0 var(--space-3); }
 h3 {
+  font-family: var(--font-label);
   font-size: var(--text-caption);
   font-weight: 600;
   line-height: 1.15;
@@ -152,6 +168,7 @@ p { margin: 0 0 var(--space-3); max-width: 65ch; }
 .muted { color: var(--text-muted); }
 
 .badge {
+  font-family: var(--font-label);
   display: inline-flex;
   align-items: center;
   gap: 0.3em;
@@ -180,7 +197,7 @@ button {
 }
 button:hover:not(:disabled) { background: var(--gray-100); }
 button:active:not(:disabled) { transform: scale(0.97); }
-button.primary { background: var(--accent); color: white; border-color: var(--accent); box-shadow: var(--shadow-sm); }
+button.primary { background: var(--accent); color: white; font-weight: 600; border-color: var(--accent); box-shadow: var(--shadow-sm); }
 button.primary:hover:not(:disabled) { background: var(--accent-pressed); }
 button.danger { background: var(--danger); color: white; border-color: var(--danger); }
 button.danger:hover:not(:disabled) { filter: brightness(0.92); }
@@ -202,10 +219,11 @@ input:focus, textarea:focus, select:focus {
   border-color: var(--accent);
   box-shadow: 0 0 0 3px var(--accent-tint);
 }
-label { display: block; font-size: var(--text-caption); font-weight: 500; color: var(--text-muted); margin-bottom: var(--space-1); }
+label { display: block; font-family: var(--font-label); font-size: var(--text-caption); font-weight: 500; color: var(--text-muted); margin-bottom: var(--space-1); }
 
 table { width: 100%; border-collapse: collapse; }
 th {
+  font-family: var(--font-label);
   text-align: left;
   padding: var(--space-2) var(--space-3);
   font-size: var(--text-caption);
@@ -241,8 +259,46 @@ ul.plain li:last-child { border-bottom: none; }
   display: flex;
   align-items: center;
   justify-content: center;
-  font-size: 1.3rem;
+  color: var(--gray-500);
 }
+
+/* Provider tile on the mailbox screen — same footprint the emoji occupied, minus the
+   OS-dependent artwork. */
+.provider-icon {
+  width: 36px;
+  height: 36px;
+  flex: none;
+  border-radius: var(--radius-sm);
+  background: var(--accent-tint);
+  color: var(--accent-deep);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+}
+
+/* Connection health indicator. Replaces the coloured-circle emoji, whose colours were fixed by the
+   viewer's emoji font and so could never match the palette. Meaning is carried by the
+   status badge beside it, not by hue alone. */
+.status-dot {
+  width: 10px;
+  height: 10px;
+  flex: none;
+  border-radius: var(--radius-pill);
+  display: inline-block;
+  position: relative;
+}
+.status-dot::after {
+  content: "";
+  position: absolute;
+  inset: -4px;
+  border-radius: var(--radius-pill);
+  background: currentColor;
+  opacity: 0.16;
+}
+.status-dot--ok { background: var(--ok); color: var(--ok); }
+.status-dot--warn { background: var(--warn); color: var(--warn); }
+.status-dot--err { background: var(--danger); color: var(--danger); }
+.status-dot--idle { background: var(--gray-400); color: var(--gray-400); }
 .empty-state p { max-width: 32ch; margin: 0 auto var(--space-4); font-size: var(--text-secondary); }
 
 /* Skeleton loaders — content-shaped, not spinners */
@@ -262,14 +318,17 @@ ul.plain li:last-child { border-bottom: none; }
 /* Auth screen — full-viewport, softly gradiented, the one place a floating card earns extra elevation */
 .auth-shell {
   min-height: 100vh;
+  min-height: 100dvh; /* dvh keeps it exact under mobile browser chrome; vh is the fallback */
   display: flex;
   align-items: center;
   justify-content: center;
   padding: var(--space-5);
+  /* Full-bleed brand wash. Two soft corner tints over the canvas rather than a flat fill,
+     so the card reads as floating on something rather than sitting on a grey slab. */
   background:
-    radial-gradient(60% 50% at 15% 10%, rgba(10, 132, 255, 0.10), transparent),
-    radial-gradient(50% 45% at 90% 85%, rgba(10, 132, 255, 0.07), transparent),
-    var(--canvas);
+    radial-gradient(65% 55% at 12% 8%, rgba(255, 90, 36, 0.16), transparent 68%),
+    radial-gradient(55% 50% at 88% 94%, rgba(255, 90, 36, 0.11), transparent 68%),
+    var(--surface);
 }
 .auth-card {
   width: 100%;
@@ -282,17 +341,11 @@ ul.plain li:last-child { border-bottom: none; }
   animation: fade-in 400ms var(--ease-out);
 }
 .auth-mark {
-  width: 52px;
-  height: 52px;
-  margin: 0 auto var(--space-4);
-  border-radius: var(--radius-md);
-  background: linear-gradient(160deg, var(--accent), #5db2ff);
-  color: white;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  font-size: 1.5rem;
-  box-shadow: var(--shadow-md);
+  display: block;
+  height: 34px;
+  width: auto;
+  max-width: 78%;
+  margin: 0 auto var(--space-5);
 }
 
 /* Stat cards — Dashboard's at-a-glance summary row */
@@ -312,7 +365,7 @@ ul.plain li:last-child { border-bottom: none; }
 .stat-card .stat-value { font-size: var(--text-title1); font-weight: 700; letter-spacing: -0.02em; line-height: 1.1; }
 .stat-card .stat-value.warn { color: var(--warn); }
 .stat-card .stat-value.err { color: var(--danger); }
-.stat-card .stat-label { font-size: var(--text-caption); color: var(--text-muted); margin-top: var(--space-1); }
+.stat-card .stat-label { font-family: var(--font-label); font-size: var(--text-caption); color: var(--text-muted); margin-top: var(--space-1); }
 
 /* Toasts — replace jarring native alert()s with something that matches the design system */
 .toast-stack {

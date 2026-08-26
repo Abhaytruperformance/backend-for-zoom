@@ -66,7 +66,7 @@ export default function Login({ onLoggedIn }: { onLoggedIn: () => void }) {
   return (
     <div className="auth-shell">
       <div className="auth-card">
-        <div className="auth-mark" aria-hidden="true">◐</div>
+        <img className="auth-mark" src="/logo.png" alt="Tru Performance" />
         <h1 style={{ textAlign: "center" }}>{titles[mode]}</h1>
         <p className="muted" style={{ textAlign: "center", marginBottom: "1.5rem" }}>{subtitles[mode]}</p>
 
