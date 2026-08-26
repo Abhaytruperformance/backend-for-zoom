@@ -1,5 +1,10 @@
 import express from "express";
-import helmet from "helmet";
+// Explicit `default` rather than a default import: helmet's package exports map has no
+// `types` condition, so TypeScript can land on either index.d.mts or index.d.cts depending
+// on how the importing file is classified. Both declare `helmet as default` as a *named*
+// export, so selecting it by name compiles under either resolution — a plain default import
+// resolves to the module namespace in the CJS case, which isn't callable (TS2349).
+import { default as helmet } from "helmet";
 import cors from "cors";
 import { config, corsAllowedOrigins } from "./config.js";
 import { apiRouter } from "./routes/index.js";
