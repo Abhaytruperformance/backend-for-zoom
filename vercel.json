@@ -1,8 +1,8 @@
 {
   "$schema": "https://openapi.vercel.sh/vercel.json",
   "framework": null,
-  "installCommand": "ROOT=$(if grep -q '\"workspaces\"' package.json 2>/dev/null; then pwd; else cd .. && pwd; fi); cd \"$ROOT\" && npm install --include-workspace-root --workspaces",
-  "buildCommand": "ROOT=$(if grep -q '\"workspaces\"' package.json 2>/dev/null; then pwd; else cd .. && pwd; fi); (cd \"$ROOT\" && npm run build --workspace client) && SRC=\"$ROOT/client/dist\"; DEST=\"$(pwd)/dist\"; [ \"$SRC\" = \"$DEST\" ] || { rm -rf \"$DEST\" && cp -R \"$SRC\" \"$DEST\"; }",
+  "installCommand": "grep -q '\"workspaces\"' package.json 2>/dev/null || cd ..; sh scripts/vercel-install.sh",
+  "buildCommand": "ORIG=\"$PWD\"; grep -q '\"workspaces\"' package.json 2>/dev/null || cd ..; ORIG=\"$ORIG\" sh scripts/vercel-build.sh",
   "outputDirectory": "dist",
   "rewrites": [
     {
