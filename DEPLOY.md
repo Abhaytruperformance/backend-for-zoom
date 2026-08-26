@@ -43,6 +43,14 @@ that matters. Vercel's **Express preset compiles `server/src/index.ts` as a serv
 function using its own TypeScript settings**, which fails on the helmet import and has
 nothing to do with your `server/tsconfig.json`. `framework: null` stops that.
 
+**Check the project's Root Directory.** If it is set to `server` (which Vercel picks
+automatically when it import-suggests an Express app), Vercel scopes dependency
+installation to that one workspace — `npm install --workspace server`, 257 packages —
+so the client's `react` and `react-router-dom` are never installed and the build dies
+in a wall of `Cannot find namespace 'React'`. The `installCommand` here forces a full
+workspace install so it works either way, but setting Root Directory to `./` is the
+tidier fix.
+
 Then edit the rewrite destination in `vercel.json` to your real Render URL:
 
 ```json
