@@ -17,6 +17,14 @@ you'd rather — the requirement is just "can run two long-lived processes."
 
 ## 1. Server on Render
 
+> **Free plans will not deploy this as-is.** Render does not offer background workers on
+> the free tier — `zri-worker` needs a paid instance type (Starter). Three more free-tier
+> facts that matter here: free web services spin down after 15 minutes idle and take ~1
+> minute to wake (a cold start on a Zoom webhook), free Postgres is deleted 30 days after
+> creation, and free Key Value does **not** persist to disk, so every queued job is lost
+> whenever Redis restarts. Free is fine for a look-around; it is not fine for a pipeline
+> you expect to keep meetings in.
+
 Dashboard → **New → Blueprint** → point at this repo. It creates four resources from
 `render.yaml`: `zri-api` (web), `zri-worker` (background worker), `zri-redis`, and
 `zri-postgres`.
