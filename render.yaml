@@ -61,7 +61,7 @@ services:
   - type: web
     name: zri-api
     runtime: node
-    plan: starter
+    plan: free
     region: oregon
     branch: main
     # Migrations run here, on the API only — deliberately not in the worker's build,
@@ -86,7 +86,7 @@ services:
   - type: worker
     name: zri-worker
     runtime: node
-    plan: starter
+    plan: free
     region: oregon
     branch: main
     buildCommand: npm install && npm run build --workspace server
@@ -107,7 +107,7 @@ services:
 
   - type: redis
     name: zri-redis
-    plan: starter
+    plan: free
     region: oregon
     # BullMQ requires noeviction. Under any eviction policy Redis may drop job data
     # under memory pressure, which silently loses queued meetings rather than erroring.
@@ -117,6 +117,6 @@ services:
 
 databases:
   - name: zri-postgres
-    plan: basic-256mb
+    plan: free
     region: oregon
     postgresMajorVersion: "16"
