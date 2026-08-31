@@ -19,6 +19,7 @@ import { prisma } from "../src/db.js";
 import { buildMeetingContext } from "../src/modules/knowledge/context.js";
 import { extractMeeting, generateFollowup } from "../src/modules/ai/service.js";
 import { applyExtractionToKnowledgeBase } from "../src/modules/knowledge/relationship.js";
+import { frontendUrl } from "../src/config.js";
 
 const DEMO_ACCOUNT_ID = "demo-acme-corp";
 const DEMO_TENANT_ID_FALLBACK = process.env.DEMO_TENANT_ID; // optional override; otherwise inferred from the account
@@ -95,7 +96,20 @@ async function main() {
     process.exit(1);
   }
 
-  const account = await prisma.account.findUniqueOrThrow({ where: { id: DEMO_ACCOUNT_ID } });
+  let account = await prisma.account.findUnique({ where: { id: DEMO_ACCOUNT_ID } });
+  if (!account) {
+    if (!DEMO_TENANT_ID_FALLBACK) {
+      console.error("No demo-acme-corp account exists yet — set DEMO_TENANT_ID to the tenant it should be created under, e.g.:\n  DEMO_TENANT_ID=<your tenant id> npx tsx --env-file=.env scripts/demo-fallback.ts 1");
+      process.exit(1);
+    }
+    account = await prisma.account.create({
+      data: { id: DEMO_ACCOUNT_ID, tenantId: DEMO_TENANT_ID_FALLBACK, name: "Acme Corp", domains: ["acme.com"], emails: [] },
+    });
+    await prisma.contact.create({
+      data: { tenantId: DEMO_TENANT_ID_FALLBACK, accountId: DEMO_ACCOUNT_ID, name: "John Smith", email: "john@acme.com" },
+    });
+    console.log(`Seeded demo account "${account.name}" (${DEMO_ACCOUNT_ID}) under tenant ${DEMO_TENANT_ID_FALLBACK}`);
+  }
   const tenantId = DEMO_TENANT_ID_FALLBACK ?? account.tenantId;
 
   const startTime = new Date(Date.now() - scenario.daysAgo * 24 * 60 * 60 * 1000);
@@ -148,8 +162,8 @@ async function main() {
   console.log("\n=== Current knowledge base state for Acme Corp ===");
   console.log("Decisions:", decisions.map((d) => `${d.status}: ${d.description}`));
   console.log("Action items:", actions.map((a) => `${a.status} (${a.ownerDisplayName}${a.dueDate ? ", due " + a.dueDate.toISOString().slice(0, 10) : ""}): ${a.description}`));
-  console.log(`\nMeeting ready in the UI: http://localhost:5173/meetings/${meeting.id}`);
-  console.log(`Approval screen: http://localhost:5173/meetings/${meeting.id}/approval`);
+  console.log(`\nMeeting ready in the UI: ${frontendUrl}/meetings/${meeting.id}`);
+  console.log(`Approval screen: ${frontendUrl}/meetings/${meeting.id}/approval`);
 
   process.exit(0);
 }
