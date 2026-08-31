@@ -69,11 +69,14 @@ export async function sendApprovedEmail(snapshotId: string): Promise<void> {
     const result = await send();
     await markSent(attempt.id, snapshot.draft.meetingId, tenantId, result.providerMessageId ?? null);
   } catch (err: any) {
-    if (err.authFailure) {
-      // getValidMailboxAccessToken already flips the connection to REAUTH_REQUIRED on refresh failure;
-      // a 401 straight from the send call (valid token, revoked scope, etc.) needs the same explicit outcome here.
-      const conn = await prisma.mailboxConnection.findUnique({ where: { userId_provider: { userId, provider: attempt.provider } } });
-      if (conn) await markReauthRequired(conn.id, "401 on send");
+    if (err.authFailure || err.reauthRequired) {
+      // getValidMailboxAccessToken already flips the connection to REAUTH_REQUIRED with an accurate
+      // lastAuthError on refresh failure (err.reauthRequired) — only a 401 straight from the send call
+      // itself (err.authFailure: valid token, revoked scope, etc.) still needs marking here.
+      if (err.authFailure) {
+        const conn = await prisma.mailboxConnection.findUnique({ where: { userId_provider: { userId, provider: attempt.provider } } });
+        if (conn) await markReauthRequired(conn.id, "401 on send");
+      }
       await prisma.emailSendAttempt.update({
         where: { id: attempt.id },
         data: { status: "AUTH_REQUIRED", attempts: { increment: 1 }, lastError: "mailbox authorization required" },

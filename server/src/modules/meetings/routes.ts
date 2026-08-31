@@ -195,12 +195,20 @@ meetingsRouter.post(
       return;
     }
 
+    // The failed attempt's job can still be sitting in Redis under this same deterministic
+    // jobId (removeOnFail keeps it for 30d) — BullMQ silently no-ops .add() against an
+    // existing job id rather than erroring, so the stale terminal job must be cleared first
+    // or this retry does nothing.
     const hasTranscript = await prisma.transcript.findUnique({ where: { meetingId: meeting.id } });
     if (hasTranscript) {
       await transitionMeeting(meeting.id, "FAILED", "PROCESSING");
+      const stale = await processTranscriptQueue.getJob(meetingJobId(meeting.id));
+      if (stale) await stale.remove().catch(() => {});
       await processTranscriptQueue.add("processTranscript", { meetingId: meeting.id }, { jobId: meetingJobId(meeting.id) });
     } else {
       await transitionMeeting(meeting.id, "FAILED", "WAITING_FOR_TRANSCRIPT");
+      const stale = await pollTranscriptQueue.getJob(meetingJobId(meeting.id));
+      if (stale) await stale.remove().catch(() => {});
       await pollTranscriptQueue.add("pollTranscriptFallback", { meetingId: meeting.id }, { jobId: meetingJobId(meeting.id) });
     }
 

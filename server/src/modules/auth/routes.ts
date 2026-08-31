@@ -12,7 +12,7 @@ const registerSchema = z.object({
   name: z.string().optional(),
 });
 
-authRouter.post("/register", async (req, res, next) => {
+authRouter.post("/register", loginRateLimit, async (req, res, next) => {
   try {
     const body = registerSchema.parse(req.body);
     const result = await registerTenantAndUser(body);

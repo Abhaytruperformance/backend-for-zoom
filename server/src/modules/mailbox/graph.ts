@@ -62,11 +62,16 @@ export async function sendViaGraph(params: {
 
 export async function reconcileGraphSend(userId: string, internetMessageId: string): Promise<ReconcileResult> {
   const { accessToken } = await getValidMailboxAccessToken(userId, "MICROSOFT", microsoftRefreshRequest);
-  // Filter on the header directly rather than full-text $search — exact, and it does not
-  // depend on the search index having caught up with a send from seconds ago.
-  const filter = encodeURIComponent(`internetMessageId eq '<${internetMessageId}>'`);
+  // internetMessageId is Graph-server-generated (see sendViaGraph above) — we never set it, so
+  // filtering on it never matches our own sends. Graph also doesn't support $filter on custom
+  // internetMessageHeaders, so search the marker sendViaGraph actually stamped into the body.
+  // ponytail: $search depends on Graph's index catching up (usually seconds); sender.ts already
+  // treats a miss as "unknown" and retries with backoff, so this is only a ceiling, not a bug.
+  // Search on the marker's visible ASCII substring only, not the leading zero-width space — whether
+  // Graph's indexer tokenizes an invisible character consistently between index and query is unverified.
+  const search = encodeURIComponent(`"[ref:${internetMessageId}]"`);
   const res = await fetch(
-    `https://graph.microsoft.com/v1.0/me/mailFolders/sentitems/messages?$filter=${filter}&$select=id`,
+    `https://graph.microsoft.com/v1.0/me/mailFolders/sentitems/messages?$search=${search}&$select=id`,
     { headers: { Authorization: `Bearer ${accessToken}` } }
   );
   // A failed lookup is "unknown", never "not sent" — see reconcile.ts.

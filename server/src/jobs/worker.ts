@@ -7,7 +7,8 @@ import { sendApprovedEmail } from "../modules/mailbox/sender.js";
 new Worker(
   QUEUE_NAMES.PROCESS_TRANSCRIPT,
   async (job) => {
-    await runMeetingPipeline(job.data.meetingId as string);
+    const result = await runMeetingPipeline(job.data.meetingId as string);
+    if (!result.transcriptReady) return; // nothing ingested — leave the poll job as the only thing still driving this meeting
     // Transcript is in — the fallback poll for this meeting is no longer needed.
     const pending = await pollTranscriptQueue.getJob(meetingJobId(job.data.meetingId as string));
     if (pending) await pending.remove().catch(() => {});

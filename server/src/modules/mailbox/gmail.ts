@@ -19,10 +19,13 @@ function base64url(input: string): string {
 }
 
 function buildMime(params: { to: string[]; subject: string; body: string; internetMessageId: string; fromEmail: string }): string {
+  // Subject is free text (unlike `to`, which is zod .email()-validated) — strip CR/LF so it
+  // can't inject extra MIME headers into the message we build below.
+  const subject = params.subject.replace(/[\r\n]+/g, " ");
   return [
     `From: ${params.fromEmail}`,
     `To: ${params.to.join(", ")}`,
-    `Subject: ${params.subject}`,
+    `Subject: ${subject}`,
     `Message-ID: <${params.internetMessageId}>`,
     `MIME-Version: 1.0`,
     `Content-Type: text/plain; charset="UTF-8"`,
