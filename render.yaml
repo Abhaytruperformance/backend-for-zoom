@@ -56,7 +56,7 @@ envVarGroups:
 
 services:
   - type: web
-    name: zri-api
+    name: backend-for-zoom
     runtime: node
     plan: free
     region: oregon

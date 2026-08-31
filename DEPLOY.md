@@ -17,16 +17,18 @@ you'd rather — the requirement is just "can run two long-lived processes."
 
 ## 1. Server on Render
 
-> **Free plans will not deploy this as-is.** Render does not offer background workers on
-> the free tier — `zri-worker` needs a paid instance type (Starter). Three more free-tier
-> facts that matter here: free web services spin down after 15 minutes idle and take ~1
-> minute to wake (a cold start on a Zoom webhook), free Postgres is deleted 30 days after
-> creation, and free Key Value does **not** persist to disk, so every queued job is lost
-> whenever Redis restarts. Free is fine for a look-around; it is not fine for a pipeline
-> you expect to keep meetings in.
+> **Free tier works, with real gaps.** Render has no Background Worker resource on the
+> free plan, so the BullMQ workers run in-process inside `backend-for-zoom` instead (`RUN_WORKER_INLINE`
+> in `render.yaml`) — a dedicated paid worker is the more correct shape if budget allows,
+> since it has no idle-spindown gap. Three more free-tier facts that matter here: free web
+> services spin down after 15 minutes idle and take ~1 minute to wake (a cold start on a
+> Zoom webhook, and on inline job processing too, since it's the same process), free
+> Postgres is deleted 30 days after creation, and free Key Value does **not** persist to
+> disk, so every queued job is lost whenever Redis restarts. Free is fine for a
+> look-around; it is not fine for a pipeline you expect to keep meetings in.
 
-Dashboard → **New → Blueprint** → point at this repo. It creates four resources from
-`render.yaml`: `zri-api` (web), `zri-worker` (background worker), `zri-redis`, and
+Dashboard → **New → Blueprint** → point at this repo. It creates three resources from
+`render.yaml`: `backend-for-zoom` (web, running the BullMQ workers in-process), `zri-redis`, and
 `zri-postgres`.
 
 `DATABASE_URL` and `REDIS_URL` are wired automatically. Everything marked `sync: false`
@@ -41,8 +43,7 @@ node -e "console.log(require('crypto').randomBytes(32).toString('base64'))"  # T
 node -e "console.log(require('crypto').randomBytes(48).toString('base64'))"  # JWT_SECRET
 ```
 
-Migrations run in the API's build step (`prisma migrate deploy`), deliberately not in
-the worker's, so the two can't race to apply the same migration.
+Migrations run in the API's build step (`prisma migrate deploy`).
 
 ## 2. Client on Vercel
 
@@ -62,7 +63,7 @@ tidier fix.
 Then edit the rewrite destination in `vercel.json` to your real Render URL:
 
 ```json
-{ "source": "/api/:path*", "destination": "https://zri-api.onrender.com/api/:path*" }
+{ "source": "/api/:path*", "destination": "https://backend-for-zoom.onrender.com/api/:path*" }
 ```
 
 Vercel doesn't expand env vars inside `vercel.json`, so this is a literal edit.
@@ -112,8 +113,9 @@ curl https://<your-app>.vercel.app/api/auth/register \
 
 A `201` proves the whole chain: Vercel → rewrite → Render → Postgres.
 
-Check `zri-worker`'s logs for `workers started`. Without that line nothing will process,
-however healthy the API looks.
+Check `backend-for-zoom`'s own logs for `workers started` — that's the inline BullMQ workers coming
+up in the same process. Without that line nothing will process, however healthy the API
+looks otherwise.
 
 ## Known gaps before real users
 
