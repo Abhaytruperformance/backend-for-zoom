@@ -147,6 +147,38 @@ export async function listPastMeetingParticipants(tenantId: string, zoomUuid: st
 }
 // (see zoom/ingestion.ts handleParticipantJoined), so there's no pull-API equivalent here.
 
+export interface ZoomPastMeetingSummary {
+  uuid: string;
+  id: number;
+  topic: string;
+  start_time?: string;
+  duration?: number;
+  host_email?: string;
+}
+
+/**
+ * GET /users/me/meetings?type=previous_meetings — meeting:read:list_meetings scope (already
+ * requested at connect time, previously unused). Used for one-time historical backfill, not
+ * the live capture path (that's webhook-driven — see zoom/webhooks.ts).
+ * ponytail: Zoom's exact retention window for "previous_meetings" isn't verified against a
+ * live account here — TECHNICAL.md already warns Zoom's endpoint/scope behavior drifts from
+ * docs. Verify against the real API response before assuming completeness.
+ */
+export async function listPastMeetings(tenantId: string): Promise<ZoomPastMeetingSummary[]> {
+  const meetings: ZoomPastMeetingSummary[] = [];
+  let nextPageToken = "";
+  do {
+    const qs = new URLSearchParams({ type: "previous_meetings", page_size: "300" });
+    if (nextPageToken) qs.set("next_page_token", nextPageToken);
+    const res = await zoomFetch(tenantId, `/users/me/meetings?${qs.toString()}`);
+    if (!res.ok) throw new Error(`Zoom past-meetings list failed: ${res.status}`);
+    const body = (await res.json()) as { meetings: ZoomPastMeetingSummary[]; next_page_token?: string };
+    meetings.push(...body.meetings);
+    nextPageToken = body.next_page_token ?? "";
+  } while (nextPageToken);
+  return meetings;
+}
+
 export async function getZoomUserInfo(accessToken: string) {
   const res = await fetch(`${ZOOM_API_BASE}/users/me`, { headers: { Authorization: `Bearer ${accessToken}` } });
   if (!res.ok) throw new Error(`Zoom user lookup failed: ${res.status}`);

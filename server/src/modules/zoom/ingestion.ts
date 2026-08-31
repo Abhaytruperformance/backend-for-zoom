@@ -1,6 +1,7 @@
 import { prisma } from "../../db.js";
-import { downloadTranscriptVtt, listMeetingRecordings, listPastMeetingParticipants } from "./client.js";
+import { downloadTranscriptVtt, listMeetingRecordings, listPastMeetingParticipants, listPastMeetings } from "./client.js";
 import { resolveAccountForMeeting } from "../knowledge/resolution.js";
+import type { Meeting } from "@prisma/client";
 
 interface ZoomMeetingEndedPayload {
   payload: {
@@ -67,6 +68,55 @@ export async function handleParticipantJoined(payload: ZoomParticipantJoinedPayl
   });
 }
 
+interface NormalizedZoomMeeting {
+  zoomMeetingId: string;
+  zoomUuid: string;
+  topic: string;
+  startTime: string | undefined;
+  durationSec: number | undefined;
+  hostEmail: string | undefined;
+}
+
+/** Shared by the live webhook path and the historical backfill — upsert + deterministic account resolution. */
+async function upsertMeetingWithResolution(
+  tenantId: string,
+  meta: NormalizedZoomMeeting,
+  participantJson: Array<{ name: string; email: string }>
+): Promise<Meeting> {
+  const meeting = await prisma.meeting.upsert({
+    where: { tenantId_zoomUuid: { tenantId, zoomUuid: meta.zoomUuid } },
+    create: {
+      tenantId,
+      zoomMeetingId: meta.zoomMeetingId,
+      zoomUuid: meta.zoomUuid,
+      title: meta.topic,
+      startTime: meta.startTime ? new Date(meta.startTime) : null,
+      durationSec: meta.durationSec,
+      hostEmail: meta.hostEmail,
+      participants: participantJson,
+      status: "WAITING_FOR_TRANSCRIPT",
+    },
+    update: {
+      title: meta.topic,
+      startTime: meta.startTime ? new Date(meta.startTime) : null,
+      durationSec: meta.durationSec,
+      hostEmail: meta.hostEmail,
+      participants: participantJson,
+      status: "WAITING_FOR_TRANSCRIPT",
+    },
+  });
+
+  const resolution = await resolveAccountForMeeting(tenantId, participantJson);
+  return prisma.meeting.update({
+    where: { id: meeting.id },
+    data: {
+      accountId: resolution.accountId,
+      contactId: resolution.contactId,
+      needsResolution: resolution.needsResolution,
+    },
+  });
+}
+
 /** meeting.ended webhook -> normalized Meeting row (CAPTURED -> WAITING_FOR_TRANSCRIPT). Idempotent on (tenantId, zoomUuid). */
 export async function handleMeetingEnded(payload: ZoomMeetingEndedPayload) {
   const obj = payload.payload.object;
@@ -89,40 +139,48 @@ export async function handleMeetingEnded(payload: ZoomMeetingEndedPayload) {
     participantJson = [{ name: "Host", email: obj.host_email }];
   }
 
-  const meeting = await prisma.meeting.upsert({
-    where: { tenantId_zoomUuid: { tenantId: conn.tenantId, zoomUuid: obj.uuid } },
-    create: {
-      tenantId: conn.tenantId,
-      zoomMeetingId: String(obj.id),
-      zoomUuid: obj.uuid,
-      title: obj.topic,
-      startTime: obj.start_time ? new Date(obj.start_time) : null,
-      durationSec: obj.duration ? obj.duration * 60 : null,
-      hostEmail: obj.host_email,
-      participants: participantJson,
-      status: "WAITING_FOR_TRANSCRIPT",
-    },
-    update: {
-      title: obj.topic,
-      startTime: obj.start_time ? new Date(obj.start_time) : null,
-      durationSec: obj.duration ? obj.duration * 60 : null,
-      hostEmail: obj.host_email,
-      participants: participantJson,
-      status: "WAITING_FOR_TRANSCRIPT",
-    },
-  });
+  return upsertMeetingWithResolution(
+    conn.tenantId,
+    { zoomMeetingId: String(obj.id), zoomUuid: obj.uuid, topic: obj.topic, startTime: obj.start_time, durationSec: obj.duration ? obj.duration * 60 : undefined, hostEmail: obj.host_email },
+    participantJson
+  );
+}
 
-  const resolution = await resolveAccountForMeeting(conn.tenantId, participantJson);
-  await prisma.meeting.update({
-    where: { id: meeting.id },
-    data: {
-      accountId: resolution.accountId,
-      contactId: resolution.contactId,
-      needsResolution: resolution.needsResolution,
-    },
-  });
+/**
+ * One-time historical import: pulls meetings that ended before this Zoom connection existed
+ * (never covered by the meeting.ended webhook) and queues each for the normal transcript ->
+ * extraction pipeline. Returns the meetings queued, oldest first, so callers that enqueue jobs
+ * preserve chronological order — supersession logic (applyExtractionToKnowledgeBase) assumes
+ * decisions are extracted in the order they actually happened; processing backfilled meetings
+ * out of order can supersede a later decision with an earlier one.
+ */
+export async function listBackfillCandidates(tenantId: string): Promise<Meeting[]> {
+  const conn = await prisma.zoomConnection.findFirst({ where: { tenantId } });
+  if (!conn) throw Object.assign(new Error("Zoom not connected for this tenant"), { status: 409 });
 
-  return meeting;
+  const pastMeetings = await listPastMeetings(tenantId);
+  pastMeetings.sort((a, b) => new Date(a.start_time ?? 0).getTime() - new Date(b.start_time ?? 0).getTime());
+
+  const created: Meeting[] = [];
+  for (const m of pastMeetings) {
+    const existing = await prisma.meeting.findUnique({ where: { tenantId_zoomUuid: { tenantId, zoomUuid: m.uuid } } });
+    if (existing) continue; // already captured live or already backfilled — don't re-queue
+
+    const backfilledParticipants = await listPastMeetingParticipants(tenantId, m.uuid).catch(() => []);
+    const participantJson = backfilledParticipants.length
+      ? backfilledParticipants.map((p) => ({ name: p.name, email: p.user_email }))
+      : m.host_email
+        ? [{ name: "Host", email: m.host_email }]
+        : [];
+
+    const meeting = await upsertMeetingWithResolution(
+      tenantId,
+      { zoomMeetingId: String(m.id), zoomUuid: m.uuid, topic: m.topic, startTime: m.start_time, durationSec: m.duration ? m.duration * 60 : undefined, hostEmail: m.host_email },
+      participantJson
+    );
+    created.push(meeting);
+  }
+  return created;
 }
 
 /** VTT -> [{speaker, start, end, text}]. Minimal parser for Zoom's standard VTT transcript export. */

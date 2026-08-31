@@ -38,6 +38,18 @@ export default function ZoomConnect() {
     setStatus({ connected: false, status: "NOT_CONNECTED" });
   }
 
+  const [backfilling, setBackfilling] = useState(false);
+
+  async function backfill() {
+    setBackfilling(true);
+    try {
+      const { queued } = await api<{ queued: number }>("/zoom/backfill", { method: "POST" });
+      toast(queued > 0 ? `Importing ${queued} past meeting${queued === 1 ? "" : "s"} — processing in the background` : "No new past meetings found");
+    } finally {
+      setBackfilling(false);
+    }
+  }
+
   const copy = status ? STATUS_COPY[status.status] ?? STATUS_COPY.NOT_CONNECTED : null;
 
   return (
@@ -62,9 +74,20 @@ export default function ZoomConnect() {
             {status?.connected ? "Reconnect Zoom" : "Connect Zoom"}
           </button>
           {status?.connected && (
-            <ConfirmButton label="Disconnect" confirmLabel="Click again to disconnect" onConfirm={disconnect} />
+            <>
+              <button onClick={backfill} disabled={backfilling}>
+                {backfilling ? "Importing…" : "Import past meetings"}
+              </button>
+              <ConfirmButton label="Disconnect" confirmLabel="Click again to disconnect" onConfirm={disconnect} />
+            </>
           )}
         </div>
+        {status?.connected && (
+          <p className="muted" style={{ fontSize: "var(--text-caption)", marginTop: "0.5rem" }}>
+            Pulls meetings that ended before Zoom was connected here. Only works for meetings Zoom
+            still has a recording/transcript for — older ones may end up marked Failed.
+          </p>
+        )}
       </div>
     </div>
   );
