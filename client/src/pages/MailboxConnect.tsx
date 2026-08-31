@@ -2,6 +2,8 @@ import { useEffect, useState } from "react";
 import { useSearchParams } from "react-router-dom";
 import { api } from "../lib/api.js";
 import { Icon, type IconName } from "../components/Icon.js";
+import { ConfirmButton } from "../components/ConfirmButton.js";
+import { toast } from "../lib/toast.js";
 
 interface MailboxStatus { provider: "GOOGLE" | "MICROSOFT"; email: string; status: string }
 
@@ -26,6 +28,12 @@ export default function MailboxConnect() {
   async function connect(provider: "google" | "microsoft") {
     const { authorizeUrl } = await api<{ authorizeUrl: string }>(`/mailbox/${provider}/connect`);
     window.location.href = authorizeUrl;
+  }
+
+  async function disconnect(provider: "GOOGLE" | "MICROSOFT") {
+    await api(`/mailbox/${provider}`, { method: "DELETE" });
+    toast(`${PROVIDER_META[provider].label} disconnected`);
+    setMailboxes((prev) => prev?.filter((m) => m.provider !== provider) ?? prev);
   }
 
   function forProvider(p: "GOOGLE" | "MICROSOFT") {
@@ -59,9 +67,14 @@ export default function MailboxConnect() {
                 )}
               </div>
             </div>
-            <button className="primary" onClick={() => connect(meta.connectLabel)}>
-              {conn ? "Reconnect" : "Connect"} {meta.label}
-            </button>
+            <div style={{ display: "flex", gap: "0.5rem" }}>
+              <button className="primary" onClick={() => connect(meta.connectLabel)}>
+                {conn ? "Reconnect" : "Connect"} {meta.label}
+              </button>
+              {conn && (
+                <ConfirmButton label="Disconnect" confirmLabel="Click again to disconnect" onConfirm={() => disconnect(key)} />
+              )}
+            </div>
           </div>
         );
       })}

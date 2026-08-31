@@ -2,6 +2,8 @@ import { useEffect, useState } from "react";
 import { useSearchParams } from "react-router-dom";
 import { api } from "../lib/api.js";
 import { StatusDot } from "../components/Icon.js";
+import { ConfirmButton } from "../components/ConfirmButton.js";
+import { toast } from "../lib/toast.js";
 
 type Tone = "ok" | "warn" | "err" | "idle";
 
@@ -30,6 +32,12 @@ export default function ZoomConnect() {
     window.location.href = authorizeUrl;
   }
 
+  async function disconnect() {
+    await api("/zoom/connection", { method: "DELETE" });
+    toast("Zoom disconnected");
+    setStatus({ connected: false, status: "NOT_CONNECTED" });
+  }
+
   const copy = status ? STATUS_COPY[status.status] ?? STATUS_COPY.NOT_CONNECTED : null;
 
   return (
@@ -49,9 +57,14 @@ export default function ZoomConnect() {
             </div>
           </div>
         )}
-        <button className="primary" onClick={connect}>
-          {status?.connected ? "Reconnect Zoom" : "Connect Zoom"}
-        </button>
+        <div style={{ display: "flex", gap: "0.5rem" }}>
+          <button className="primary" onClick={connect}>
+            {status?.connected ? "Reconnect Zoom" : "Connect Zoom"}
+          </button>
+          {status?.connected && (
+            <ConfirmButton label="Disconnect" confirmLabel="Click again to disconnect" onConfirm={disconnect} />
+          )}
+        </div>
       </div>
     </div>
   );
