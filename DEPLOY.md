@@ -126,8 +126,13 @@ looks otherwise.
   pure JS and produces interchangeable hashes.
 - **Password reset tokens are logged, not emailed.** Anyone with log access can take
   over an account. Wire up real delivery before letting anyone else in.
-- **`TOKEN_ENCRYPTION_KEY` is a single static key** with no rotation path. Whoever reads
-  the env reads every connected mailbox and Zoom account.
+- **`TOKEN_ENCRYPTION_KEY` now has a rotation path** (`server/src/lib/crypto.ts` +
+  `server/scripts/rotate-token-encryption-key.ts`): set `TOKEN_ENCRYPTION_KEY` to a freshly
+  generated key, `TOKEN_ENCRYPTION_KEY_PREVIOUS` to the old one, deploy (nothing breaks —
+  decryption falls back to the previous key automatically), run the script once to re-encrypt
+  every stored token under the new key, then remove `TOKEN_ENCRYPTION_KEY_PREVIOUS`. Still
+  true until you actually do this: whoever reads the current env reads every connected
+  mailbox and Zoom account, same as any single-key scheme.
 - **Rate limiting is in-process.** Fine on a single Render instance; if you scale the
   API past one, move `express-rate-limit` to a Redis store or the limits multiply.
 - **Rotate any credential that has been pasted into a chat, ticket, or terminal.**

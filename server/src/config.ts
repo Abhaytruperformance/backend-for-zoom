@@ -6,6 +6,8 @@ const envSchema = z.object({
   DATABASE_URL: z.string().min(1),
   REDIS_URL: z.string().min(1),
   TOKEN_ENCRYPTION_KEY: z.string().min(1, "TOKEN_ENCRYPTION_KEY is required (32-byte base64 key)"),
+  // Set only during a key rotation — see lib/crypto.ts and scripts/rotate-token-encryption-key.ts.
+  TOKEN_ENCRYPTION_KEY_PREVIOUS: z.string().default(""),
   JWT_SECRET: z.string().min(1),
   CORS_ALLOWED_ORIGINS: z.string().default("http://localhost:5173"),
 
