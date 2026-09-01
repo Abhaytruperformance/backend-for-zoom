@@ -8,6 +8,7 @@ export const QUEUE_NAMES = {
   PROCESS_TRANSCRIPT: "processTranscript",
   POLL_TRANSCRIPT: "pollTranscriptFallback",
   SEND_EMAIL: "sendEmail",
+  ZOOM_COMPANY_SYNC: "zoomCompanySync",
 } as const;
 
 const defaultJobOptions = {
@@ -30,6 +31,12 @@ export const pollTranscriptQueue = new Queue(QUEUE_NAMES.POLL_TRANSCRIPT, {
 export const sendEmailQueue = new Queue(QUEUE_NAMES.SEND_EMAIL, {
   connection: redisConnection,
   defaultJobOptions,
+});
+
+// No retry backoff here — a failed sync run just tries again on the next scheduled tick.
+export const zoomCompanySyncQueue = new Queue(QUEUE_NAMES.ZOOM_COMPANY_SYNC, {
+  connection: redisConnection,
+  defaultJobOptions: { attempts: 1, removeOnComplete: { age: 60 * 60 * 24 * 7 }, removeOnFail: { age: 60 * 60 * 24 * 30 } },
 });
 
 /**

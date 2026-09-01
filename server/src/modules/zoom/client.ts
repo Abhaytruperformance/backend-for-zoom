@@ -179,6 +179,89 @@ export async function listPastMeetings(tenantId: string): Promise<ZoomPastMeetin
   return meetings;
 }
 
+// ---------- Server-to-Server: company-wide sync, not tied to any tenant's OAuth connection ----------
+
+let s2sTokenCache: { token: string; expiresAt: number } | null = null;
+
+/**
+ * Account-credentials grant — authenticates as the whole Zoom account (config.ZOOM_S2S_ACCOUNT_ID),
+ * not a specific user. No refresh token in this grant type; just request a fresh one when the
+ * cached one is close to expiry. Cached in-process only (short-lived, ~1h) — fine to re-fetch
+ * after a restart.
+ */
+async function getS2SAccessToken(): Promise<string> {
+  if (s2sTokenCache && s2sTokenCache.expiresAt - Date.now() > 60_000) {
+    return s2sTokenCache.token;
+  }
+  const basicAuth = Buffer.from(`${config.ZOOM_S2S_CLIENT_ID}:${config.ZOOM_S2S_CLIENT_SECRET}`).toString("base64");
+  const res = await fetch(`${ZOOM_OAUTH_TOKEN_URL}?grant_type=account_credentials&account_id=${encodeURIComponent(config.ZOOM_S2S_ACCOUNT_ID)}`, {
+    method: "POST",
+    headers: { Authorization: `Basic ${basicAuth}` },
+  });
+  if (!res.ok) throw new Error(`Zoom S2S token request failed: ${res.status}`);
+  const body = (await res.json()) as { access_token: string; expires_in: number };
+  s2sTokenCache = { token: body.access_token, expiresAt: Date.now() + body.expires_in * 1000 };
+  return body.access_token;
+}
+
+async function zoomS2SFetch(path: string, init?: RequestInit): Promise<Response> {
+  const token = await getS2SAccessToken();
+  return fetch(`${ZOOM_API_BASE}${path}`, { ...init, headers: { ...init?.headers, Authorization: `Bearer ${token}` } });
+}
+
+export interface ZoomAccountUser {
+  id: string;
+  email: string;
+}
+
+/** GET /users (account-wide) — every active user in the Zoom account this S2S app is scoped to. */
+export async function listAccountUsers(): Promise<ZoomAccountUser[]> {
+  const users: ZoomAccountUser[] = [];
+  let nextPageToken = "";
+  do {
+    const qs = new URLSearchParams({ status: "active", page_size: "300" });
+    if (nextPageToken) qs.set("next_page_token", nextPageToken);
+    const res = await zoomS2SFetch(`/users?${qs.toString()}`);
+    if (!res.ok) throw new Error(`Zoom account users list failed: ${res.status}`);
+    const body = (await res.json()) as { users: ZoomAccountUser[]; next_page_token?: string };
+    users.push(...body.users);
+    nextPageToken = body.next_page_token ?? "";
+  } while (nextPageToken);
+  return users;
+}
+
+/** GET /users/{userId}/meetings?type=previous_meetings — same shape as listPastMeetings, but for any user in the account via S2S auth. */
+export async function listUserPastMeetingsS2S(userId: string): Promise<ZoomPastMeetingSummary[]> {
+  const meetings: ZoomPastMeetingSummary[] = [];
+  let nextPageToken = "";
+  do {
+    const qs = new URLSearchParams({ type: "previous_meetings", page_size: "300" });
+    if (nextPageToken) qs.set("next_page_token", nextPageToken);
+    const res = await zoomS2SFetch(`/users/${encodeURIComponent(userId)}/meetings?${qs.toString()}`);
+    if (!res.ok) throw new Error(`Zoom S2S past-meetings list failed for user ${userId}: ${res.status}`);
+    const body = (await res.json()) as { meetings: ZoomPastMeetingSummary[]; next_page_token?: string };
+    meetings.push(...body.meetings);
+    nextPageToken = body.next_page_token ?? "";
+  } while (nextPageToken);
+  return meetings;
+}
+
+/** GET /meetings/{meetingId}/recordings via S2S auth — same as listMeetingRecordings but not scoped to a tenant's own OAuth connection. */
+export async function listMeetingRecordingsS2S(meetingId: string): Promise<ZoomRecordingsResponse | null> {
+  const res = await zoomS2SFetch(`/meetings/${encodeURIComponent(meetingId)}/recordings`);
+  if (res.status === 404) return null;
+  if (!res.ok) throw new Error(`Zoom S2S recordings lookup failed: ${res.status}`);
+  return (await res.json()) as ZoomRecordingsResponse;
+}
+
+/** Downloads a transcript VTT file via S2S auth. */
+export async function downloadTranscriptVttS2S(downloadUrl: string): Promise<string> {
+  const token = await getS2SAccessToken();
+  const res = await fetch(downloadUrl, { headers: { Authorization: `Bearer ${token}` } });
+  if (!res.ok) throw new Error(`Zoom S2S transcript download failed: ${res.status}`);
+  return res.text();
+}
+
 export async function getZoomUserInfo(accessToken: string) {
   const res = await fetch(`${ZOOM_API_BASE}/users/me`, { headers: { Authorization: `Bearer ${accessToken}` } });
   if (!res.ok) throw new Error(`Zoom user lookup failed: ${res.status}`);

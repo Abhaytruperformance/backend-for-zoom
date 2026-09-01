@@ -68,7 +68,7 @@ export async function handleParticipantJoined(payload: ZoomParticipantJoinedPayl
   });
 }
 
-interface NormalizedZoomMeeting {
+export interface NormalizedZoomMeeting {
   zoomMeetingId: string;
   zoomUuid: string;
   topic: string;
@@ -77,8 +77,8 @@ interface NormalizedZoomMeeting {
   hostEmail: string | undefined;
 }
 
-/** Shared by the live webhook path and the historical backfill — upsert + deterministic account resolution. */
-async function upsertMeetingWithResolution(
+/** Shared by the live webhook path, the historical backfill, and the company-wide S2S sync — upsert + deterministic account resolution. */
+export async function upsertMeetingWithResolution(
   tenantId: string,
   meta: NormalizedZoomMeeting,
   participantJson: Array<{ name: string; email: string }>

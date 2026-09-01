@@ -17,6 +17,13 @@ const envSchema = z.object({
   ZOOM_REDIRECT_URI: z.string().default(""),
   ZOOM_WEBHOOK_SECRET_TOKEN: z.string().default(""),
 
+  // Server-to-Server: company-wide Zoom sync, separate from the per-tenant OAuth connect flow.
+  // Empty by default — the sync job no-ops (see jobs/zoomCompanySync.ts) unless all three are set.
+  ZOOM_S2S_ACCOUNT_ID: z.string().default(""),
+  ZOOM_S2S_CLIENT_ID: z.string().default(""),
+  ZOOM_S2S_CLIENT_SECRET: z.string().default(""),
+  ZOOM_S2S_SYNC_TENANT_ID: z.string().default(""),
+
   GOOGLE_CLIENT_ID: z.string().default(""),
   GOOGLE_CLIENT_SECRET: z.string().default(""),
   GOOGLE_REDIRECT_URI: z.string().default(""),

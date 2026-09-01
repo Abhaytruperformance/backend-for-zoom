@@ -1,8 +1,9 @@
 import { Worker } from "bullmq";
-import { redisConnection, QUEUE_NAMES, pollTranscriptQueue, meetingJobId } from "../queue.js";
+import { redisConnection, QUEUE_NAMES, pollTranscriptQueue, zoomCompanySyncQueue, meetingJobId } from "../queue.js";
 import { runMeetingPipeline } from "./runMeetingPipeline.js";
 import { failMeeting } from "../modules/meetings/stateMachine.js";
 import { sendApprovedEmail } from "../modules/mailbox/sender.js";
+import { syncCompanyZoomAccount } from "../modules/zoom/companySync.js";
 
 new Worker(
   QUEUE_NAMES.PROCESS_TRANSCRIPT,
@@ -41,5 +42,18 @@ new Worker(
   },
   { connection: redisConnection }
 );
+
+new Worker(
+  QUEUE_NAMES.ZOOM_COMPANY_SYNC,
+  async () => {
+    const result = await syncCompanyZoomAccount();
+    console.log(`zoom company sync: ${result.usersScanned} users scanned, ${result.meetingsQueued} meetings queued`);
+  },
+  { connection: redisConnection }
+);
+
+// Daily at 03:00 UTC. Re-adding the same repeat config on every boot is a no-op if it already
+// exists — BullMQ dedupes repeatable jobs by their pattern, not by call count.
+await zoomCompanySyncQueue.add("zoomCompanySync", {}, { repeat: { pattern: "0 3 * * *" } });
 
 console.log("workers started");
