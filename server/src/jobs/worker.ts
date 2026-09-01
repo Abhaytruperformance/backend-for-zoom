@@ -45,9 +45,9 @@ new Worker(
 
 new Worker(
   QUEUE_NAMES.ZOOM_COMPANY_SYNC,
+  // syncCompanyZoomAccount already logs its own per-user + summary lines.
   async () => {
-    const result = await syncCompanyZoomAccount();
-    console.log(`zoom company sync: ${result.usersScanned} users scanned, ${result.meetingsQueued} meetings queued`);
+    await syncCompanyZoomAccount();
   },
   { connection: redisConnection }
 );
