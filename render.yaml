@@ -8,6 +8,16 @@
 # Deploy: Render Dashboard -> New -> Blueprint -> point at this repo.
 # Then set the `sync: false` secrets below in the dashboard (they are deliberately
 # not committed).
+#
+# Free-tier spin-down + webhooks: when this instance is asleep, Zoom's webhook
+# POST is itself the request that wakes it — Render queues that first request
+# while the instance cold-starts rather than dropping it, but Zoom's own
+# webhook-delivery timeout is short enough that a cold start (dependency
+# install is already done at build time, so this is just process boot +
+# DB/Redis reconnect) could plausibly exceed it under a slow boot. Not
+# verified against a real forced-cold-start timing test — if webhooks are
+# ever silently missed in practice, check delivery timing here before
+# assuming it's a signature/config bug elsewhere.
 
 envVarGroups:
   - name: zri-shared
@@ -42,9 +52,15 @@ envVarGroups:
       - key: OUTBOUND_MESSAGE_ID_DOMAIN
         sync: false
       # All of these must be your PUBLIC Vercel origin, not the Render URL — the
-      # browser talks to Vercel, which proxies /api through to this service. Note
-      # the server derives its post-OAuth redirect target from the FIRST entry of
-      # CORS_ALLOWED_ORIGINS, so order matters here.
+      # browser talks to Vercel, which proxies /api through to this service.
+      #
+      # ORDER MATTERS: the server derives its post-OAuth redirect target from
+      # the FIRST entry of this comma-separated list. Nothing in the Render
+      # dashboard enforces that — a future edit that reorders or appends
+      # entries here will silently change where OAuth redirects land, with no
+      # error. If this list ever needs more than one origin, prefer adding
+      # explicit config.ts validation (or a separate OAUTH_REDIRECT_ORIGIN var)
+      # over relying on array position.
       - key: CORS_ALLOWED_ORIGINS
         sync: false
       - key: ZOOM_REDIRECT_URI
@@ -55,6 +71,11 @@ envVarGroups:
         sync: false
 
 services:
+  # Name MUST match the service already live in the Render dashboard
+  # (backend-for-zoom) — Render's Blueprint sync matches services by name, so
+  # changing this creates a brand-new orphaned service instead of adopting the
+  # existing one, rather than renaming it. Confirmed the hard way once already;
+  # don't rename this without renaming the live service first, in that order.
   - type: web
     name: backend-for-zoom
     runtime: node
@@ -66,6 +87,12 @@ services:
     # needs them even though the app runs in production.
     buildCommand: npm install --include=dev && npm run build --workspace server && npm run prisma:deploy --workspace server
     startCommand: npm run start --workspace server
+    # Must be a real Express route on THIS service (server/src routes, not
+    # behind /api). Don't confuse this with the README's note that /health
+    # 404s/serves the SPA on the local ngrok tunnel — that's about Vite only
+    # proxying /api/* in local dev; here it's hitting Express directly, so the
+    # route must actually exist and return 200 or Render will treat every
+    # deploy as unhealthy and keep swapping it out.
     healthCheckPath: /health
     envVars:
       - fromGroup: zri-shared
