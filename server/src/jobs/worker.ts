@@ -6,7 +6,7 @@ import { sendApprovedEmail } from "../modules/mailbox/sender.js";
 import { syncCompanyZoomAccount } from "../modules/zoom/companySync.js";
 import { sendAlert } from "../lib/alert.js";
 
-new Worker(
+const processTranscriptWorker = new Worker(
   QUEUE_NAMES.PROCESS_TRANSCRIPT,
   async (job) => {
     const result = await runMeetingPipeline(job.data.meetingId as string);
@@ -17,6 +17,16 @@ new Worker(
   },
   { connection: redisConnection }
 );
+
+// Only mark FAILED once BullMQ itself confirms every configured attempt is exhausted — doing
+// this any earlier (e.g. inside runMeetingPipeline on the very first failure) would make every
+// subsequent retry a silent no-op, defeating the attempts/backoff config entirely.
+processTranscriptWorker.on("failed", async (job, error) => {
+  if (!job) return;
+  if (job.attemptsMade >= (job.opts.attempts ?? 1)) {
+    await failMeeting(job.data.meetingId as string, error?.message ?? "processing failed after bounded retries");
+  }
+});
 
 const pollWorker = new Worker(
   QUEUE_NAMES.POLL_TRANSCRIPT,
@@ -29,10 +39,13 @@ const pollWorker = new Worker(
   { connection: redisConnection }
 );
 
-pollWorker.on("failed", async (job) => {
+pollWorker.on("failed", async (job, error) => {
   if (!job) return;
   if (job.attemptsMade >= (job.opts.attempts ?? 1)) {
-    await failMeeting(job.data.meetingId as string, "transcript not available for this recording after bounded retries");
+    // error.message is whichever actually happened — "transcript not yet available" on the
+    // common path, but a real extraction/knowledge-base error otherwise; the old hardcoded
+    // "transcript not available" message was wrong for that second case.
+    await failMeeting(job.data.meetingId as string, error?.message ?? "failed after bounded retries");
   }
 });
 
