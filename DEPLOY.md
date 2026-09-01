@@ -133,6 +133,9 @@ looks otherwise.
   every stored token under the new key, then remove `TOKEN_ENCRYPTION_KEY_PREVIOUS`. Still
   true until you actually do this: whoever reads the current env reads every connected
   mailbox and Zoom account, same as any single-key scheme.
-- **Rate limiting is in-process.** Fine on a single Render instance; if you scale the
-  API past one, move `express-rate-limit` to a Redis store or the limits multiply.
+- **Rate limiting is now Redis-backed** (`server/src/middleware/redisRateLimitStore.ts`), so
+  limits are shared correctly across multiple API instances — no longer a "fine on one
+  instance, multiplies on more" gap. Uses its own Redis connection, separate from BullMQ's
+  (see the file's own comment for why: sharing one with a Worker's blocking commands risks a
+  stalled rate-limit check).
 - **Rotate any credential that has been pasted into a chat, ticket, or terminal.**
