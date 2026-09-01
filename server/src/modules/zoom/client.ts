@@ -147,32 +147,47 @@ export async function listPastMeetingParticipants(tenantId: string, zoomUuid: st
 }
 // (see zoom/ingestion.ts handleParticipantJoined), so there's no pull-API equivalent here.
 
-export interface ZoomPastMeetingSummary {
+export interface ZoomRecordedMeeting {
   uuid: string;
   id: number;
   topic: string;
   start_time?: string;
   duration?: number;
   host_email?: string;
+  recording_files: ZoomRecordingFile[];
+}
+
+function last30DaysRange(): { from: string; to: string } {
+  const to = new Date();
+  const from = new Date(to.getTime() - 30 * 24 * 60 * 60 * 1000);
+  return { from: from.toISOString().slice(0, 10), to: to.toISOString().slice(0, 10) };
 }
 
 /**
- * GET /users/me/meetings?type=previous_meetings — meeting:read:list_meetings scope (already
- * requested at connect time, previously unused). Used for one-time historical backfill, not
- * the live capture path (that's webhook-driven — see zoom/webhooks.ts).
- * ponytail: Zoom's exact retention window for "previous_meetings" isn't verified against a
- * live account here — TECHNICAL.md already warns Zoom's endpoint/scope behavior drifts from
- * docs. Verify against the real API response before assuming completeness.
+ * GET /users/me/recordings?from=&to= — cloud_recording:read:list_user_recordings scope.
+ *
+ * Replaces an earlier version built on GET /users/me/meetings?type=previous_meetings
+ * (meeting:read:list_meetings scope). That endpoint is documented as unreliable by Zoom's own
+ * developer forum — it silently returns fewer meetings than actually exist, sometimes zero,
+ * with no error (confirmed against a real account: a user with several daily meetings got 0
+ * results). The Recordings List endpoint is what we actually need anyway — only meetings with
+ * a completed recording are useful here — and returns recording_files inline, so this also
+ * drops the separate per-meeting listMeetingRecordings call.
+ *
+ * Zoom limits date ranges to 1 month per call; a 30-day trailing window is what a daily/
+ * on-demand sync needs, so no pagination-across-months loop here. A deeper historical backfill
+ * would need one, but cloud recordings past 30 days are already gone on most Zoom plans anyway.
  */
-export async function listPastMeetings(tenantId: string): Promise<ZoomPastMeetingSummary[]> {
-  const meetings: ZoomPastMeetingSummary[] = [];
+export async function listRecordedMeetings(tenantId: string): Promise<ZoomRecordedMeeting[]> {
+  const { from, to } = last30DaysRange();
+  const meetings: ZoomRecordedMeeting[] = [];
   let nextPageToken = "";
   do {
-    const qs = new URLSearchParams({ type: "previous_meetings", page_size: "300" });
+    const qs = new URLSearchParams({ from, to, page_size: "300" });
     if (nextPageToken) qs.set("next_page_token", nextPageToken);
-    const res = await zoomFetch(tenantId, `/users/me/meetings?${qs.toString()}`);
-    if (!res.ok) throw new Error(`Zoom past-meetings list failed: ${res.status}`);
-    const body = (await res.json()) as { meetings: ZoomPastMeetingSummary[]; next_page_token?: string };
+    const res = await zoomFetch(tenantId, `/users/me/recordings?${qs.toString()}`);
+    if (!res.ok) throw new Error(`Zoom recordings list failed: ${res.status}`);
+    const body = (await res.json()) as { meetings: ZoomRecordedMeeting[]; next_page_token?: string };
     meetings.push(...body.meetings);
     nextPageToken = body.next_page_token ?? "";
   } while (nextPageToken);
@@ -230,28 +245,25 @@ export async function listAccountUsers(): Promise<ZoomAccountUser[]> {
   return users;
 }
 
-/** GET /users/{userId}/meetings?type=previous_meetings — same shape as listPastMeetings, but for any user in the account via S2S auth. */
-export async function listUserPastMeetingsS2S(userId: string): Promise<ZoomPastMeetingSummary[]> {
-  const meetings: ZoomPastMeetingSummary[] = [];
+/**
+ * GET /users/{userId}/recordings?from=&to= via S2S auth — same reasoning as listRecordedMeetings:
+ * the previous_meetings list endpoint is unreliable (confirmed against a real account), and this
+ * returns recording_files inline, so one call replaces the old list-then-lookup pair.
+ */
+export async function listUserRecordingsS2S(userId: string): Promise<ZoomRecordedMeeting[]> {
+  const { from, to } = last30DaysRange();
+  const meetings: ZoomRecordedMeeting[] = [];
   let nextPageToken = "";
   do {
-    const qs = new URLSearchParams({ type: "previous_meetings", page_size: "300" });
+    const qs = new URLSearchParams({ from, to, page_size: "300" });
     if (nextPageToken) qs.set("next_page_token", nextPageToken);
-    const res = await zoomS2SFetch(`/users/${encodeURIComponent(userId)}/meetings?${qs.toString()}`);
-    if (!res.ok) throw new Error(`Zoom S2S past-meetings list failed for user ${userId}: ${res.status}`);
-    const body = (await res.json()) as { meetings: ZoomPastMeetingSummary[]; next_page_token?: string };
+    const res = await zoomS2SFetch(`/users/${encodeURIComponent(userId)}/recordings?${qs.toString()}`);
+    if (!res.ok) throw new Error(`Zoom S2S recordings list failed for user ${userId}: ${res.status}`);
+    const body = (await res.json()) as { meetings: ZoomRecordedMeeting[]; next_page_token?: string };
     meetings.push(...body.meetings);
     nextPageToken = body.next_page_token ?? "";
   } while (nextPageToken);
   return meetings;
-}
-
-/** GET /meetings/{meetingId}/recordings via S2S auth — same as listMeetingRecordings but not scoped to a tenant's own OAuth connection. */
-export async function listMeetingRecordingsS2S(meetingId: string): Promise<ZoomRecordingsResponse | null> {
-  const res = await zoomS2SFetch(`/meetings/${encodeURIComponent(meetingId)}/recordings`);
-  if (res.status === 404) return null;
-  if (!res.ok) throw new Error(`Zoom S2S recordings lookup failed: ${res.status}`);
-  return (await res.json()) as ZoomRecordingsResponse;
 }
 
 /** Downloads a transcript VTT file via S2S auth. */

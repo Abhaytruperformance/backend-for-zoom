@@ -84,8 +84,9 @@ export default function ZoomConnect() {
         </div>
         {status?.connected && (
           <p className="muted" style={{ fontSize: "var(--text-caption)", marginTop: "0.5rem" }}>
-            Pulls meetings that ended before Zoom was connected here. Only works for meetings Zoom
-            still has a recording/transcript for — older ones may end up marked Failed.
+            Pulls recorded meetings from the last 30 days that predate connecting Zoom here.
+            Only meetings with a cloud recording are found; a meeting whose transcript isn't
+            ready yet may end up marked Failed.
           </p>
         )}
       </div>

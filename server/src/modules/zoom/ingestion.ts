@@ -1,5 +1,5 @@
 import { prisma } from "../../db.js";
-import { downloadTranscriptVtt, listMeetingRecordings, listPastMeetingParticipants, listPastMeetings } from "./client.js";
+import { downloadTranscriptVtt, listMeetingRecordings, listPastMeetingParticipants, listRecordedMeetings } from "./client.js";
 import { resolveAccountForMeeting } from "../knowledge/resolution.js";
 import type { Meeting } from "@prisma/client";
 
@@ -158,7 +158,7 @@ export async function listBackfillCandidates(tenantId: string): Promise<Meeting[
   const conn = await prisma.zoomConnection.findFirst({ where: { tenantId } });
   if (!conn) throw Object.assign(new Error("Zoom not connected for this tenant"), { status: 409 });
 
-  const pastMeetings = await listPastMeetings(tenantId);
+  const pastMeetings = await listRecordedMeetings(tenantId);
   pastMeetings.sort((a, b) => new Date(a.start_time ?? 0).getTime() - new Date(b.start_time ?? 0).getTime());
 
   const created: Meeting[] = [];

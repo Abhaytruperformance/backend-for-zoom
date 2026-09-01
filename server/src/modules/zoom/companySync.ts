@@ -1,6 +1,6 @@
 import { prisma } from "../../db.js";
 import { config } from "../../config.js";
-import { listAccountUsers, listUserPastMeetingsS2S, listMeetingRecordingsS2S, downloadTranscriptVttS2S } from "./client.js";
+import { listAccountUsers, listUserRecordingsS2S, downloadTranscriptVttS2S } from "./client.js";
 import { upsertMeetingWithResolution, parseVtt } from "./ingestion.js";
 import { transitionMeeting } from "../meetings/stateMachine.js";
 import { processTranscriptQueue, meetingJobId } from "../../queue.js";
@@ -30,7 +30,7 @@ export async function syncCompanyZoomAccount(): Promise<{ usersScanned: number; 
   let meetingsQueued = 0;
 
   for (const user of users) {
-    const meetings = await listUserPastMeetingsS2S(user.id).catch(() => []);
+    const meetings = await listUserRecordingsS2S(user.id).catch(() => []);
     // Oldest first — applyExtractionToKnowledgeBase's supersession logic assumes meetings are
     // extracted in the order they actually happened (see listBackfillCandidates for the same reasoning).
     meetings.sort((a, b) => new Date(a.start_time ?? 0).getTime() - new Date(b.start_time ?? 0).getTime());
@@ -39,8 +39,7 @@ export async function syncCompanyZoomAccount(): Promise<{ usersScanned: number; 
       const existing = await prisma.meeting.findUnique({ where: { tenantId_zoomUuid: { tenantId, zoomUuid: m.uuid } } });
       if (existing) continue;
 
-      const recordings = await listMeetingRecordingsS2S(String(m.id)).catch(() => null);
-      const transcriptFile = recordings?.recording_files.find((f) => f.file_type === "TRANSCRIPT" && f.status === "completed");
+      const transcriptFile = m.recording_files.find((f) => f.file_type === "TRANSCRIPT" && f.status === "completed");
       if (!transcriptFile) continue; // not ready yet — next day's run will see this meeting again
 
       const meeting = await upsertMeetingWithResolution(
