@@ -4,6 +4,7 @@ import { runMeetingPipeline } from "./runMeetingPipeline.js";
 import { failMeeting } from "../modules/meetings/stateMachine.js";
 import { sendApprovedEmail } from "../modules/mailbox/sender.js";
 import { syncCompanyZoomAccount } from "../modules/zoom/companySync.js";
+import { sendAlert } from "../lib/alert.js";
 
 new Worker(
   QUEUE_NAMES.PROCESS_TRANSCRIPT,
@@ -45,9 +46,17 @@ new Worker(
 
 new Worker(
   QUEUE_NAMES.ZOOM_COMPANY_SYNC,
-  // syncCompanyZoomAccount already logs its own per-user + summary lines.
+  // syncCompanyZoomAccount already logs its own per-user + summary lines. Per-meeting
+  // failures are visible there; a total failure of the run itself (token expired, scope
+  // revoked, the whole account fetch throwing) previously only showed up as a log line no
+  // one was watching — this runs once a day, so it's worth flagging same-day, not after a streak.
   async () => {
-    await syncCompanyZoomAccount();
+    try {
+      await syncCompanyZoomAccount();
+    } catch (err) {
+      await sendAlert(`Zoom company sync failed: ${err instanceof Error ? err.message : String(err)}`);
+      throw err; // still fails the BullMQ job — alerting is additive, not a substitute for that record
+    }
   },
   { connection: redisConnection }
 );

@@ -35,6 +35,9 @@ const envSchema = z.object({
 
   OUTBOUND_MESSAGE_ID_DOMAIN: z.string().default("zri.local"),
 
+  // Ops alerting (Slack incoming webhook). Empty by default — lib/alert.ts no-ops when unset.
+  ALERT_SLACK_WEBHOOK_URL: z.string().default(""),
+
   SKIP_INTEGRATION: z
     .string()
     .default("true")
