@@ -2,6 +2,9 @@
   "name": "zoom-relationship-intelligence",
   "private": true,
   "workspaces": ["server", "client"],
+  "overrides": {
+    "tar": "^7.5.21"
+  },
   "scripts": {
     "dev:server": "npm run dev --workspace server",
     "dev:client": "npm run dev --workspace client",

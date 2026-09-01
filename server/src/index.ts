@@ -21,6 +21,12 @@ const app = express();
 app.set("trust proxy", 1);
 
 app.use(helmet());
+// Helmet dropped its Permissions-Policy middleware (spec churn); this app uses none of these
+// browser features, so deny them all rather than leave the header absent.
+app.use((_req, res, next) => {
+  res.setHeader("Permissions-Policy", "camera=(), microphone=(), geolocation=(), payment=()");
+  next();
+});
 app.use(cors({ origin: corsAllowedOrigins }));
 
 // Webhook routes need the raw body for signature validation, so they're
