@@ -14,13 +14,19 @@ const STATUS_COPY: Record<string, { badge: string; tone: Tone; note: string }> =
   NOT_CONNECTED: { badge: "", tone: "idle", note: "Not connected yet." },
 };
 
+interface ZoomStatus {
+  connected: boolean;
+  status: string;
+  companySyncActive: boolean;
+}
+
 export default function ZoomConnect() {
-  const [status, setStatus] = useState<{ connected: boolean; status: string } | null>(null);
+  const [status, setStatus] = useState<ZoomStatus | null>(null);
   const [params, setParams] = useSearchParams();
   const callbackError = params.get("error");
 
   useEffect(() => {
-    api<{ connected: boolean; status: string }>("/zoom/status").then(setStatus);
+    api<ZoomStatus>("/zoom/status").then(setStatus);
     if (params.get("connected") || params.get("error")) {
       setParams({}, { replace: true }); // clear the one-time callback params from the URL
     }
@@ -35,7 +41,7 @@ export default function ZoomConnect() {
   async function disconnect() {
     await api("/zoom/connection", { method: "DELETE" });
     toast("Zoom disconnected");
-    setStatus({ connected: false, status: "NOT_CONNECTED" });
+    setStatus((prev) => ({ connected: false, status: "NOT_CONNECTED", companySyncActive: prev?.companySyncActive ?? false }));
   }
 
   const [backfilling, setBackfilling] = useState(false);
@@ -57,6 +63,17 @@ export default function ZoomConnect() {
       <h1>Zoom connection</h1>
       <p className="muted">Powers meeting capture, transcript retrieval, and participant matching.</p>
       {callbackError && <p className="error">{callbackError}</p>}
+      {status?.companySyncActive && (
+        <div className="card" style={{ marginBottom: "1rem", display: "flex", alignItems: "center", gap: "0.75rem" }}>
+          <StatusDot tone="ok" />
+          <div>
+            <div><span className="badge ok">COMPANY SYNC ACTIVE</span></div>
+            <div className="muted" style={{ fontSize: "var(--text-caption)", marginTop: "0.2rem" }}>
+              Meetings across your whole Zoom account sync in automatically (Server-to-Server) — no personal connect needed for that. The status below is only for connecting your own individual Zoom account on top of that, if you want to.
+            </div>
+          </div>
+        </div>
+      )}
       <div className="card">
         {!status ? (
           <div className="skeleton skeleton-line" style={{ width: "40%" }} />

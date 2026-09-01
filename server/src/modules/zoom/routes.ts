@@ -2,6 +2,7 @@ import { Router } from "express";
 import { requireAuth } from "../../middleware/auth.js";
 import { asyncRoute } from "../../middleware/errorHandler.js";
 import { prisma } from "../../db.js";
+import { config } from "../../config.js";
 import { zoomCallbackHandler, zoomConnectHandler } from "./oauth.js";
 import { listBackfillCandidates } from "./ingestion.js";
 import { decryptSecret } from "../../lib/crypto.js";
@@ -18,10 +19,16 @@ zoomRouter.get(
   "/status",
   requireAuth,
   asyncRoute(async (req, res) => {
-    const conn = await prisma.zoomConnection.findFirst({ where: { tenantId: req.user!.tenantId } });
+    const tenantId = req.user!.tenantId;
+    const conn = await prisma.zoomConnection.findFirst({ where: { tenantId } });
+    // Company-wide sync (companySync.ts) authenticates via Server-to-Server credentials, not
+    // this tenant's own OAuth connection — without this, a tenant that only ever receives data
+    // through that sync shows a misleading "Not Connected" despite meetings actually flowing in.
+    const companySyncActive = Boolean(config.ZOOM_S2S_SYNC_TENANT_ID) && config.ZOOM_S2S_SYNC_TENANT_ID === tenantId;
     res.json({
       connected: !!conn && conn.status === "ACTIVE",
       status: conn?.status ?? "NOT_CONNECTED",
+      companySyncActive,
     });
   })
 );
