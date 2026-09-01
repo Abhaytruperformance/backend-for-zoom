@@ -174,10 +174,16 @@ export async function generateFollowup(meetingId: string, tonePreset: string): P
   const participants = (meeting.participants as any) as Array<{ name: string; email?: string }>;
   const knownEmails = participants.filter((p) => p.email).map((p) => ({ name: p.name, email: p.email as string }));
 
-  const user = `Meeting: ${meeting.title}\nConversation type: ${meeting.extraction?.conversationType}\nSummary: ${meeting.extraction?.summary}\nDecisions: ${JSON.stringify(meeting.decisions.map((d) => ({ description: d.description, status: d.status })))}\nAction items: ${JSON.stringify(meeting.actionItems.map((a) => ({ description: a.description, owner: a.ownerDisplayName, dueDate: a.dueDate })))}\nTone: ${tonePreset}\nKnown meeting participants with email addresses (the ONLY people you may propose as recipients): ${JSON.stringify(knownEmails)}\n\nWrite a follow-up email that continues this specific relationship (avoid generic "thank you for the meeting" boilerplate unless it genuinely fits). Only propose recipients from the known participants list above.\n\nRequired JSON shape: { subject, body, recipients: [{name, email}] }`;
+  const contacts = knownEmails.length
+    ? await prisma.contact.findMany({ where: { tenantId: meeting.tenantId, email: { in: knownEmails.map((k) => k.email) } } })
+    : [];
+  const roleByEmail = new Map(contacts.filter((c) => c.role).map((c) => [c.email.toLowerCase(), c.role as string]));
+  const recipientsWithRole = knownEmails.map((k) => ({ ...k, role: roleByEmail.get(k.email.toLowerCase()) ?? null }));
+
+  const user = `Meeting: ${meeting.title}\nConversation type: ${meeting.extraction?.conversationType}\nSummary: ${meeting.extraction?.summary}\nDecisions: ${JSON.stringify(meeting.decisions.map((d) => ({ description: d.description, status: d.status })))}\nAction items: ${JSON.stringify(meeting.actionItems.map((a) => ({ description: a.description, owner: a.ownerDisplayName, dueDate: a.dueDate })))}\nTone: ${tonePreset}\nKnown meeting participants with email addresses and, where known, their role (the ONLY people you may propose as recipients): ${JSON.stringify(recipientsWithRole)}\n\nWrite a follow-up email that continues this specific relationship (avoid generic "thank you for the meeting" boilerplate unless it genuinely fits). Where a recipient's role is known, let it shape emphasis and language — e.g. an SEO role cares about rankings/traffic/keywords, a finance role cares about budget/timeline, a delivery role cares about scope/deadlines — without inventing facts not present above. Only propose recipients from the known participants list above.\n\nRequired JSON shape: { subject, body, recipients: [{name, email}] }`;
 
   const result = await callStructured({
-    system: "You draft follow-up emails for a relationship-intelligence product. Never invent recipients outside the supplied participant list.",
+    system: "You draft follow-up emails for a relationship-intelligence product. Adapt tone and content emphasis to each recipient's role when known. Never invent recipients outside the supplied participant list.",
     user,
     schema: followupOutputSchema,
   });

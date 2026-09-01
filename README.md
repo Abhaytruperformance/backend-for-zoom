@@ -59,6 +59,8 @@ cd server && npm test
 
 Runs against `server/.env`'s `DATABASE_URL`; the DB-backed suites skip automatically (not fail) if no Postgres is reachable, so this is safe to run at any point. `server/tests/integration` (real Zoom/Gmail/Graph calls) is separate and off by default (`SKIP_INTEGRATION=true`); it's a scaffolded-but-empty folder — a fast-follow, not yet written.
 
+`server/scripts/eval-extraction.ts` is a small AI accuracy check — 8 hand-written assertions (decision confirmation, action-item ownership, decision supersession across two linked meetings, relative-date resolution, and a no-hallucination case on vague discussion) run against real GPT-4o-mini calls, not mocks. Currently 8/8. Not part of `npm test` (costs real API calls) — run manually with `EVAL_TENANT_ID=<id> npx tsx --env-file=.env scripts/eval-extraction.ts` from `server/`. Keyword/field-level checks, not exact-match — good enough to catch a regression or a systematic bias, not a substitute for a larger labeled dataset if this needs to scale up later.
+
 `server/scripts/demo-fallback.ts` is a separate, reusable rehearsal/fallback tool — runs two scripted meetings (kickoff + follow-up) through the real pipeline (real GPT-4o-mini, real knowledge-base writes) against a seeded demo account, ending with a draft ready to approve in the UI. Useful for demos or for proving the pipeline works without depending on a live Zoom recording. Self-seeding — creates its demo account if one doesn't already exist, given `DEMO_TENANT_ID`. See the comment at the top of that file for usage.
 
 `server/scripts/run-company-sync-once.ts` — same idea, but triggers the [company-wide Zoom sync](#company-wide-zoom-sync-server-to-server) on demand instead of waiting for its daily schedule.
