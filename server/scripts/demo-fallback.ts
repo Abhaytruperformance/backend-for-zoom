@@ -21,8 +21,7 @@ import { extractMeeting, generateFollowup } from "../src/modules/ai/service.js";
 import { applyExtractionToKnowledgeBase } from "../src/modules/knowledge/relationship.js";
 import { frontendUrl } from "../src/config.js";
 
-const DEMO_ACCOUNT_ID = "demo-acme-corp";
-const DEMO_TENANT_ID_FALLBACK = process.env.DEMO_TENANT_ID; // optional override; otherwise inferred from the account
+const DEMO_TENANT_ID = process.env.DEMO_TENANT_ID;
 
 const PARTICIPANTS = [
   { name: "You", email: "abhayshukla4455@gmail.com" },
@@ -96,21 +95,25 @@ async function main() {
     process.exit(1);
   }
 
-  let account = await prisma.account.findUnique({ where: { id: DEMO_ACCOUNT_ID } });
+  if (!DEMO_TENANT_ID) {
+    console.error("Set DEMO_TENANT_ID to the tenant this demo account belongs to, e.g.:\n  DEMO_TENANT_ID=<your tenant id> npx tsx --env-file=.env scripts/demo-fallback.ts 1");
+    process.exit(1);
+  }
+  const tenantId = DEMO_TENANT_ID;
+
+  // Scoped to this tenant specifically — a global lookup-by-name here previously let two
+  // different tenants' demo runs silently share (and cross-reference) the same account row.
+  const demoAccountId = `demo-acme-corp-${tenantId}`;
+  let account = await prisma.account.findUnique({ where: { id: demoAccountId } });
   if (!account) {
-    if (!DEMO_TENANT_ID_FALLBACK) {
-      console.error("No demo-acme-corp account exists yet — set DEMO_TENANT_ID to the tenant it should be created under, e.g.:\n  DEMO_TENANT_ID=<your tenant id> npx tsx --env-file=.env scripts/demo-fallback.ts 1");
-      process.exit(1);
-    }
     account = await prisma.account.create({
-      data: { id: DEMO_ACCOUNT_ID, tenantId: DEMO_TENANT_ID_FALLBACK, name: "Acme Corp", domains: ["acme.com"], emails: [] },
+      data: { id: demoAccountId, tenantId, name: "Acme Corp", domains: ["acme.com"], emails: [] },
     });
     await prisma.contact.create({
-      data: { tenantId: DEMO_TENANT_ID_FALLBACK, accountId: DEMO_ACCOUNT_ID, name: "John Smith", email: "john@acme.com" },
+      data: { tenantId, accountId: demoAccountId, name: "John Smith", email: "john@acme.com" },
     });
-    console.log(`Seeded demo account "${account.name}" (${DEMO_ACCOUNT_ID}) under tenant ${DEMO_TENANT_ID_FALLBACK}`);
+    console.log(`Seeded demo account "${account.name}" (${demoAccountId}) under tenant ${tenantId}`);
   }
-  const tenantId = DEMO_TENANT_ID_FALLBACK ?? account.tenantId;
 
   const startTime = new Date(Date.now() - scenario.daysAgo * 24 * 60 * 60 * 1000);
 
@@ -122,7 +125,7 @@ async function main() {
       title: scenario.title,
       startTime,
       participants: PARTICIPANTS,
-      accountId: DEMO_ACCOUNT_ID,
+      accountId: account.id,
       status: "PROCESSING",
     },
   });
@@ -132,7 +135,7 @@ async function main() {
   });
 
   console.log(`[${scenario.title}] extracting with real GPT-4o-mini...`);
-  const context = await buildMeetingContext(tenantId, DEMO_ACCOUNT_ID, meeting.id);
+  const context = await buildMeetingContext(tenantId, account.id, meeting.id);
   const extraction = await extractMeeting(meeting.id, context);
   await applyExtractionToKnowledgeBase(meeting, extraction, context);
   await prisma.meeting.update({ where: { id: meeting.id }, data: { status: "AWAITING_APPROVAL" } });
@@ -155,8 +158,8 @@ async function main() {
   });
 
   const [decisions, actions] = await Promise.all([
-    prisma.decision.findMany({ where: { tenantId, accountId: DEMO_ACCOUNT_ID }, orderBy: { createdAt: "desc" } }),
-    prisma.actionItem.findMany({ where: { tenantId, accountId: DEMO_ACCOUNT_ID }, orderBy: { createdAt: "desc" } }),
+    prisma.decision.findMany({ where: { tenantId, accountId: account.id }, orderBy: { createdAt: "desc" } }),
+    prisma.actionItem.findMany({ where: { tenantId, accountId: account.id }, orderBy: { createdAt: "desc" } }),
   ]);
 
   console.log("\n=== Current knowledge base state for Acme Corp ===");

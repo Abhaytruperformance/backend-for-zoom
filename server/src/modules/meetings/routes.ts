@@ -15,16 +15,40 @@ const NOT_SAFE_TO_REGENERATE: string[] = ["WAITING_FOR_TRANSCRIPT", "TRANSCRIPT_
 export const meetingsRouter = Router();
 meetingsRouter.use(requireAuth);
 
+const listQuerySchema = z.object({
+  search: z.string().trim().min(1).optional(),
+  status: z.string().optional(),
+  page: z.coerce.number().int().min(1).default(1),
+  pageSize: z.coerce.number().int().min(1).max(100).default(25),
+});
+
 meetingsRouter.get(
   "/",
   asyncRoute(async (req, res) => {
-    const meetings = await prisma.meeting.findMany({
-      where: { tenantId: req.user!.tenantId },
-      orderBy: { startTime: "desc" },
-      take: 100,
-      include: { account: true },
-    });
-    res.json(meetings);
+    const q = listQuerySchema.parse(req.query);
+    const where = {
+      tenantId: req.user!.tenantId,
+      status: q.status ? (q.status as any) : undefined,
+      ...(q.search
+        ? {
+            OR: [
+              { title: { contains: q.search, mode: "insensitive" as const } },
+              { account: { name: { contains: q.search, mode: "insensitive" as const } } },
+            ],
+          }
+        : {}),
+    };
+    const [items, total] = await Promise.all([
+      prisma.meeting.findMany({
+        where,
+        orderBy: { startTime: "desc" },
+        skip: (q.page - 1) * q.pageSize,
+        take: q.pageSize,
+        include: { account: true },
+      }),
+      prisma.meeting.count({ where }),
+    ]);
+    res.json({ items, total, page: q.page, pageSize: q.pageSize });
   })
 );
 

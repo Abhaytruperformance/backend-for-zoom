@@ -3,6 +3,7 @@ import { Link } from "react-router-dom";
 import { api } from "../lib/api.js";
 import { SkeletonList } from "../components/Skeleton.js";
 import { EmptyState } from "../components/EmptyState.js";
+import { toast } from "../lib/toast.js";
 
 interface MeetingRow {
   id: string;
@@ -11,6 +12,7 @@ interface MeetingRow {
   updatedAt: string;
   account: { name: string } | null;
 }
+interface MeetingsPage { items: MeetingRow[]; total: number }
 interface NeedsResolutionMeeting { id: string; title: string; startTime: string | null }
 interface ActionItemRow {
   id: string;
@@ -20,6 +22,7 @@ interface ActionItemRow {
   meetingId: string;
   accountId: string | null;
 }
+interface ActionItemsPage { items: ActionItemRow[]; total: number }
 
 function agingBadge(updatedAt: string) {
   const hours = (Date.now() - new Date(updatedAt).getTime()) / (1000 * 60 * 60);
@@ -29,19 +32,70 @@ function agingBadge(updatedAt: string) {
 }
 
 export default function Dashboard() {
-  const [meetings, setMeetings] = useState<MeetingRow[] | null>(null);
+  const [awaitingApproval, setAwaitingApproval] = useState<MeetingsPage | null>(null);
+  const [failed, setFailed] = useState<MeetingsPage | null>(null);
   const [needsResolution, setNeedsResolution] = useState<NeedsResolutionMeeting[]>([]);
-  const [openActions, setOpenActions] = useState<ActionItemRow[] | null>(null);
+  const [openActions, setOpenActions] = useState<ActionItemsPage | null>(null);
+  const [selected, setSelected] = useState<Set<string>>(new Set());
+  const [bulkOwner, setBulkOwner] = useState("");
+  const [bulkBusy, setBulkBusy] = useState(false);
+
+  function loadActions() {
+    api<ActionItemsPage>("/actions?status=OPEN&pageSize=100").then(setOpenActions);
+  }
 
   useEffect(() => {
-    api<MeetingRow[]>("/meetings").then(setMeetings);
+    api<MeetingsPage>("/meetings?status=AWAITING_APPROVAL&pageSize=50").then(setAwaitingApproval);
+    api<MeetingsPage>("/meetings?status=FAILED&pageSize=50").then(setFailed);
     api<NeedsResolutionMeeting[]>("/accounts/needs-resolution").then(setNeedsResolution);
-    api<ActionItemRow[]>("/actions?status=OPEN").then(setOpenActions);
+    loadActions();
   }, []);
 
-  const awaitingApproval = meetings?.filter((m) => m.status === "AWAITING_APPROVAL") ?? [];
-  const failed = meetings?.filter((m) => m.status === "FAILED") ?? [];
-  const staleApprovals = awaitingApproval.filter((m) => Date.now() - new Date(m.updatedAt).getTime() > 24 * 60 * 60 * 1000);
+  const staleApprovals = (awaitingApproval?.items ?? []).filter((m) => Date.now() - new Date(m.updatedAt).getTime() > 24 * 60 * 60 * 1000);
+
+  function toggle(id: string) {
+    setSelected((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
+  }
+
+  function toggleAll() {
+    if (!openActions) return;
+    setSelected((prev) => (prev.size === openActions.items.length ? new Set() : new Set(openActions.items.map((a) => a.id))));
+  }
+
+  async function bulkComplete() {
+    setBulkBusy(true);
+    try {
+      await api("/actions/bulk", { method: "PATCH", body: JSON.stringify({ ids: [...selected], status: "COMPLETED" }) });
+      toast(`Marked ${selected.size} action item${selected.size > 1 ? "s" : ""} complete`);
+      setSelected(new Set());
+      loadActions();
+    } catch (err) {
+      toast(err instanceof Error ? err.message : "Bulk update failed", "err");
+    } finally {
+      setBulkBusy(false);
+    }
+  }
+
+  async function bulkReassign() {
+    if (!bulkOwner.trim()) return;
+    setBulkBusy(true);
+    try {
+      await api("/actions/bulk", { method: "PATCH", body: JSON.stringify({ ids: [...selected], ownerDisplayName: bulkOwner.trim() }) });
+      toast(`Reassigned ${selected.size} action item${selected.size > 1 ? "s" : ""} to ${bulkOwner.trim()}`);
+      setSelected(new Set());
+      setBulkOwner("");
+      loadActions();
+    } catch (err) {
+      toast(err instanceof Error ? err.message : "Bulk update failed", "err");
+    } finally {
+      setBulkBusy(false);
+    }
+  }
 
   return (
     <div>
@@ -50,7 +104,7 @@ export default function Dashboard() {
 
       <div className="stat-row">
         <div className="stat-card">
-          <div className={`stat-value ${awaitingApproval.length > 0 ? "warn" : ""}`}>{meetings === null ? "—" : awaitingApproval.length}</div>
+          <div className={`stat-value ${(awaitingApproval?.total ?? 0) > 0 ? "warn" : ""}`}>{awaitingApproval === null ? "—" : awaitingApproval.total}</div>
           <div className="stat-label">Awaiting approval</div>
         </div>
         <div className="stat-card">
@@ -58,11 +112,11 @@ export default function Dashboard() {
           <div className="stat-label">Need resolution</div>
         </div>
         <div className="stat-card">
-          <div className={`stat-value ${failed.length > 0 ? "err" : ""}`}>{failed.length}</div>
+          <div className={`stat-value ${(failed?.total ?? 0) > 0 ? "err" : ""}`}>{failed === null ? "—" : failed.total}</div>
           <div className="stat-label">Failed</div>
         </div>
         <div className="stat-card">
-          <div className="stat-value">{openActions === null ? "—" : openActions.length}</div>
+          <div className="stat-value">{openActions === null ? "—" : openActions.total}</div>
           <div className="stat-label">Open action items</div>
         </div>
       </div>
@@ -77,13 +131,13 @@ export default function Dashboard() {
 
       <div className="card">
         <h3>Awaiting your approval</h3>
-        {meetings === null ? (
+        {awaitingApproval === null ? (
           <SkeletonList rows={2} />
-        ) : awaitingApproval.length === 0 ? (
+        ) : awaitingApproval.items.length === 0 ? (
           <p className="muted">Nothing waiting on you.</p>
         ) : (
           <ul className="plain">
-            {awaitingApproval.map((m) => (
+            {awaitingApproval.items.map((m) => (
               <li key={m.id} style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
                 <span>
                   <Link to={`/meetings/${m.id}/approval`}>{m.title}</Link>
@@ -107,11 +161,11 @@ export default function Dashboard() {
         </div>
       )}
 
-      {failed.length > 0 && (
+      {failed !== null && failed.items.length > 0 && (
         <div className="card">
           <h3>Failed</h3>
           <ul className="plain">
-            {failed.map((m) => (
+            {failed.items.map((m) => (
               <li key={m.id}><Link to={`/meetings/${m.id}`}>{m.title}</Link> <span className="badge err">FAILED</span></li>
             ))}
           </ul>
@@ -122,21 +176,45 @@ export default function Dashboard() {
         <h3>Open action items across all accounts</h3>
         {openActions === null ? (
           <SkeletonList rows={3} />
-        ) : openActions.length === 0 ? (
+        ) : openActions.items.length === 0 ? (
           <EmptyState icon="check-circle" title="Nothing open" description="Every action item across your accounts is resolved." />
         ) : (
-          <table>
-            <thead><tr><th>Action</th><th>Owner</th><th>Due</th></tr></thead>
-            <tbody>
-              {openActions.map((a) => (
-                <tr key={a.id}>
-                  <td><Link to={`/meetings/${a.meetingId}`}>{a.description}</Link></td>
-                  <td>{a.ownerDisplayName}</td>
-                  <td className="muted">{a.dueDate ? new Date(a.dueDate).toLocaleDateString() : "—"}</td>
+          <>
+            {selected.size > 0 && (
+              <div style={{ display: "flex", gap: "0.5rem", alignItems: "center", flexWrap: "wrap", marginBottom: "0.75rem", padding: "0.6rem 0.75rem", background: "var(--accent-tint)", borderRadius: "var(--radius-sm)" }}>
+                <strong style={{ fontSize: "var(--text-caption)" }}>{selected.size} selected</strong>
+                <button onClick={bulkComplete} disabled={bulkBusy}>Mark complete</button>
+                <input placeholder="Reassign to…" value={bulkOwner} onChange={(e) => setBulkOwner(e.target.value)} style={{ width: 160, marginBottom: 0 }} />
+                <button onClick={bulkReassign} disabled={bulkBusy || !bulkOwner.trim()}>Reassign</button>
+                <button onClick={() => setSelected(new Set())} disabled={bulkBusy}>Clear</button>
+              </div>
+            )}
+            <table>
+              <thead>
+                <tr>
+                  <th style={{ width: 32 }}><input type="checkbox" checked={selected.size === openActions.items.length} onChange={toggleAll} /></th>
+                  <th>Action</th>
+                  <th>Owner</th>
+                  <th>Due</th>
                 </tr>
-              ))}
-            </tbody>
-          </table>
+              </thead>
+              <tbody>
+                {openActions.items.map((a) => (
+                  <tr key={a.id}>
+                    <td><input type="checkbox" checked={selected.has(a.id)} onChange={() => toggle(a.id)} /></td>
+                    <td><Link to={`/meetings/${a.meetingId}`}>{a.description}</Link></td>
+                    <td>{a.ownerDisplayName}</td>
+                    <td className="muted">{a.dueDate ? new Date(a.dueDate).toLocaleDateString() : "—"}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+            {openActions.total > openActions.items.length && (
+              <p className="muted" style={{ marginTop: "0.75rem", marginBottom: 0, fontSize: "var(--text-caption)" }}>
+                Showing {openActions.items.length} of {openActions.total} open action items.
+              </p>
+            )}
+          </>
         )}
       </div>
     </div>

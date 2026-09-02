@@ -1,38 +1,53 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useState } from "react";
 import { Link } from "react-router-dom";
 import { api } from "../lib/api.js";
 import { SkeletonList } from "../components/Skeleton.js";
 import { EmptyState } from "../components/EmptyState.js";
+import { Pagination } from "../components/Pagination.js";
 import { toast } from "../lib/toast.js";
 
 interface AccountRow { id: string; name: string; lastMeetingAt: string | null; contacts: Array<{ id: string }> }
+interface AccountsPage { items: AccountRow[]; total: number; page: number; pageSize: number }
 interface NeedsResolutionMeeting { id: string; title: string; startTime: string | null }
 
+const PAGE_SIZE = 25;
+
 export default function Accounts() {
-  const [accounts, setAccounts] = useState<AccountRow[] | null>(null);
+  const [result, setResult] = useState<AccountsPage | null>(null);
   const [needsResolution, setNeedsResolution] = useState<NeedsResolutionMeeting[]>([]);
   const [chosenAccount, setChosenAccount] = useState<Record<string, string>>({});
+  const [searchInput, setSearchInput] = useState("");
   const [search, setSearch] = useState("");
+  const [page, setPage] = useState(1);
   const [showNewAccount, setShowNewAccount] = useState(false);
 
-  function load() {
-    api<AccountRow[]>("/accounts").then(setAccounts);
+  function loadNeedsResolution() {
     api<NeedsResolutionMeeting[]>("/accounts/needs-resolution").then(setNeedsResolution);
   }
 
-  useEffect(load, []);
+  useEffect(loadNeedsResolution, []);
 
-  const filtered = useMemo(() => {
-    if (!accounts) return null;
-    const q = search.trim().toLowerCase();
-    return q ? accounts.filter((a) => a.name.toLowerCase().includes(q)) : accounts;
-  }, [accounts, search]);
+  useEffect(() => {
+    const t = setTimeout(() => setSearch(searchInput.trim()), 300);
+    return () => clearTimeout(t);
+  }, [searchInput]);
+
+  useEffect(() => setPage(1), [search]);
+
+  function load() {
+    const params = new URLSearchParams({ page: String(page), pageSize: String(PAGE_SIZE) });
+    if (search) params.set("search", search);
+    api<AccountsPage>(`/accounts?${params}`).then(setResult);
+  }
+
+  useEffect(load, [search, page]);
 
   async function resolve(meetingId: string) {
     const accountId = chosenAccount[meetingId];
     if (!accountId) return;
     await api(`/meetings/${meetingId}/resolve-account`, { method: "POST", body: JSON.stringify({ accountId }) });
     toast("Account assigned");
+    loadNeedsResolution();
     load();
   }
 
@@ -62,7 +77,7 @@ export default function Accounts() {
                 <span style={{ flex: 1 }}>{m.title}</span>
                 <select value={chosenAccount[m.id] ?? ""} onChange={(e) => setChosenAccount({ ...chosenAccount, [m.id]: e.target.value })} style={{ width: 200, marginBottom: 0 }}>
                   <option value="">Choose account…</option>
-                  {(accounts ?? []).map((a) => <option key={a.id} value={a.id}>{a.name}</option>)}
+                  {(result?.items ?? []).map((a) => <option key={a.id} value={a.id}>{a.name}</option>)}
                 </select>
                 <button onClick={() => resolve(m.id)}>Assign</button>
               </li>
@@ -71,24 +86,26 @@ export default function Accounts() {
         </div>
       )}
 
-      {accounts === null ? (
-        <SkeletonList rows={3} />
-      ) : accounts.length === 0 ? (
-        <EmptyState
-          icon="building"
-          title="No accounts yet"
-          description="Create one manually, or wait for a meeting's participant email to match a known contact or domain."
-        />
-      ) : (
-        <div className="card">
-          <input placeholder="Search accounts…" value={search} onChange={(e) => setSearch(e.target.value)} style={{ marginBottom: filtered?.length ? "0.75rem" : 0 }} />
-          {filtered && filtered.length === 0 ? (
+      <div className="card">
+        <input placeholder="Search accounts…" value={searchInput} onChange={(e) => setSearchInput(e.target.value)} style={{ marginBottom: "0.75rem" }} />
+        {result === null ? (
+          <SkeletonList rows={3} />
+        ) : result.items.length === 0 ? (
+          search ? (
             <p className="muted">No accounts match "{search}".</p>
           ) : (
+            <EmptyState
+              icon="building"
+              title="No accounts yet"
+              description="Create one manually, or wait for a meeting's participant email to match a known contact or domain."
+            />
+          )
+        ) : (
+          <>
             <table>
               <thead><tr><th>Account</th><th>Contacts</th><th>Last meeting</th></tr></thead>
               <tbody>
-                {filtered?.map((a) => (
+                {result.items.map((a) => (
                   <tr key={a.id}>
                     <td><Link to={`/accounts/${a.id}/briefing`}>{a.name}</Link></td>
                     <td className="muted">{a.contacts.length}</td>
@@ -97,9 +114,10 @@ export default function Accounts() {
                 ))}
               </tbody>
             </table>
-          )}
-        </div>
-      )}
+            <Pagination page={result.page} pageSize={result.pageSize} total={result.total} onPageChange={setPage} />
+          </>
+        )}
+      </div>
     </div>
   );
 }

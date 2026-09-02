@@ -9,15 +9,31 @@ import { writeAudit } from "../../lib/audit.js";
 export const knowledgeRouter = Router();
 knowledgeRouter.use(requireAuth);
 
+const listQuerySchema = z.object({
+  search: z.string().trim().min(1).optional(),
+  page: z.coerce.number().int().min(1).default(1),
+  pageSize: z.coerce.number().int().min(1).max(100).default(25),
+});
+
 knowledgeRouter.get(
   "/",
   asyncRoute(async (req, res) => {
-    const accounts = await prisma.account.findMany({
-      where: { tenantId: req.user!.tenantId },
-      orderBy: { lastMeetingAt: "desc" },
-      include: { contacts: true },
-    });
-    res.json(accounts);
+    const q = listQuerySchema.parse(req.query);
+    const where = {
+      tenantId: req.user!.tenantId,
+      ...(q.search ? { name: { contains: q.search, mode: "insensitive" as const } } : {}),
+    };
+    const [items, total] = await Promise.all([
+      prisma.account.findMany({
+        where,
+        orderBy: { lastMeetingAt: "desc" },
+        skip: (q.page - 1) * q.pageSize,
+        take: q.pageSize,
+        include: { contacts: true },
+      }),
+      prisma.account.count({ where }),
+    ]);
+    res.json({ items, total, page: q.page, pageSize: q.pageSize });
   })
 );
 
