@@ -3,7 +3,8 @@
   "private": true,
   "workspaces": ["server", "client"],
   "overrides": {
-    "tar": "^7.5.21"
+    "tar": "^7.5.21",
+    "qs": "^6.16.0"
   },
   "scripts": {
     "dev:server": "npm run dev --workspace server",
