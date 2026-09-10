@@ -3,7 +3,7 @@ import { useState } from "react";
 import { getToken, clearToken } from "./lib/api.js";
 import Login from "./pages/Login.js";
 import Dashboard from "./pages/Dashboard.js";
-import Insights from "./pages/Insights.js";
+// import Insights from "./pages/Insights.js"; // commented out for now
 import Meetings from "./pages/Meetings.js";
 import MeetingDetail from "./pages/MeetingDetail.js";
 import ApprovalScreen from "./pages/ApprovalScreen.js";
@@ -45,7 +45,7 @@ function AppShell({ onLogout }: { onLogout: () => void }) {
             <img src="/logo.png" alt="Tru Performance" />
           </span>
           <NavLink to="/dashboard">Dashboard</NavLink>
-          <NavLink to="/insights">Insights</NavLink>
+          {/* <NavLink to="/insights">Insights</NavLink> commented out for now */}
           <NavLink to="/meetings">Meetings</NavLink>
           <NavLink to="/accounts">Accounts</NavLink>
           <NavLink to="/zoom">Zoom</NavLink>
@@ -88,7 +88,7 @@ export default function App() {
           }
         >
           <Route path="/dashboard" element={<RequireAuth><Dashboard /></RequireAuth>} />
-          <Route path="/insights" element={<RequireAuth><Insights /></RequireAuth>} />
+          {/* <Route path="/insights" element={<RequireAuth><Insights /></RequireAuth>} /> commented out for now */}
           <Route path="/meetings" element={<RequireAuth><Meetings /></RequireAuth>} />
           <Route path="/meetings/:id" element={<RequireAuth><MeetingDetail /></RequireAuth>} />
           <Route path="/meetings/:id/approval" element={<RequireAuth><ApprovalScreen /></RequireAuth>} />
