@@ -9,6 +9,7 @@ import { decisionsRouter } from "../modules/decisions/routes.js";
 import { contactsRouter } from "../modules/contacts/routes.js";
 import { approvalRouter } from "../modules/approval/routes.js";
 import { insightsRouter } from "../modules/insights/routes.js";
+import { devRouter } from "../modules/dev/routes.js";
 
 export const apiRouter = Router();
 
@@ -22,3 +23,4 @@ apiRouter.use("/decisions", decisionsRouter);
 apiRouter.use("/contacts", contactsRouter);
 apiRouter.use("/approval", approvalRouter);
 apiRouter.use("/insights", insightsRouter);
+apiRouter.use("/dev", devRouter);
