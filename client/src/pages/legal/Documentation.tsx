@@ -3,37 +3,38 @@ import { LegalLayout } from "./LegalLayout.js";
 export default function Documentation() {
   return (
     <LegalLayout title="Documentation">
-      <p>How this app turns a recorded Zoom meeting into decisions, action items, and an approved follow-up email.</p>
+      <p>How to add, use, and remove the meeting assitant app for your Zoom account.</p>
 
-      <h2>1. Connect Zoom</h2>
+      <h2>Adding the app</h2>
       <p>
-        From the Zoom page in the app, connect your Zoom account. Once connected, any meeting you host that gets recorded to Zoom's
-        cloud is automatically picked up after the recording and transcript finish processing.
+        Install "meeting assitant" from the Zoom App Marketplace and authorize it with your Zoom account. You'll be redirected to
+        create (or log into) your meeting assitant workspace, then back to Zoom once authorization completes. No separate download is
+        required — everything runs from your browser at{" "}
+        <a href="https://meeting.tp-devserver.com">meeting.tp-devserver.com</a>.
+      </p>
+      <p>
+        After authorizing, connect a Gmail or Microsoft mailbox from the app's Mailbox page — this is what the app uses to send an
+        approved follow-up email on your behalf. Connecting a mailbox is separate from the Zoom authorization and optional until you
+        want to send your first follow-up.
       </p>
 
-      <h2>2. Meetings are processed automatically</h2>
-      <p>
-        Once a transcript is ready, the app extracts a summary, decisions, action items, risks, and open questions using AI, and matches
-        the meeting to the right client account by participant email domain. If it can't confidently match one account, it's flagged for
-        manual resolution on the Accounts page.
-      </p>
+      <h2>Using the app</h2>
+      <p>Once connected, any meeting you host that Zoom records to the cloud is picked up automatically:</p>
+      <ul>
+        <li>The transcript is pulled once Zoom's Cloud Recording finishes processing it.</li>
+        <li>AI extracts a summary, decisions, action items, risks, and open questions, and matches the meeting to the right client account by participant email domain.</li>
+        <li>As you have more meetings with the same account, later decisions and action items correctly update or supersede earlier ones instead of creating duplicates.</li>
+        <li>An AI-drafted follow-up email is prepared for every processed meeting — but nothing is ever sent automatically. Open the meeting's Approval screen to edit the subject, body, and recipients, then approve it; only then does it send.</li>
+      </ul>
 
-      <h2>3. Decisions and action items build a relationship history</h2>
+      <h2>Removing the app</h2>
       <p>
-        As you have more meetings with the same account, later decisions correctly supersede earlier ones instead of creating
-        duplicates — if a client changes their mind in a follow-up call, the app updates the record rather than leaving two conflicting
-        entries. The same applies to action items: a reassigned owner or a changed due date updates the existing commitment.
+        You can disconnect at either level, independently:
       </p>
-
-      <h2>4. Review and approve the follow-up draft</h2>
-      <p>
-        Every processed meeting gets an AI-drafted follow-up email, but nothing is ever sent automatically. Open the meeting's Approval
-        screen to edit the subject, body, and recipients, then approve it — only then does it send, via your connected Gmail or
-        Microsoft mailbox.
-      </p>
-
-      <h2>5. Connect a mailbox to send</h2>
-      <p>Connect Gmail or Microsoft from the Mailbox page — this is what actually sends an approved follow-up on your behalf.</p>
+      <ul>
+        <li><strong>From inside the app</strong> — use the Disconnect button on the Zoom or Mailbox page to immediately revoke and delete that stored connection.</li>
+        <li><strong>From Zoom directly</strong> — in the Zoom App Marketplace, go to Manage → Installed Apps, find "meeting assitant," and remove it. This revokes the app's access from Zoom's side; any data already processed remains in your workspace until you separately request deletion (see our <a href="/privacy">Privacy Policy</a> for how).</li>
+      </ul>
 
       <h2>Questions</h2>
       <p>
