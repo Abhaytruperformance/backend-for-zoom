@@ -1,0 +1,58 @@
+@import url('https://fonts.googleapis.com/css2?family=Inter:ital,opsz,wght@0,14..32,100..900;1,14..32,100..900&family=Outfit:wght@100..900&display=swap');
+
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+/* Scoped to .tru-landing so these never leak into the rest of the app, which has
+   its own token system in src/index.css. Values are just what the ui/ primitives
+   (shadcn-style Card/Badge) need, mapped to this app's own brand palette. */
+.tru-landing {
+  --lp-primary: #ff5a24;
+  --lp-primary-foreground: #ffffff;
+  --lp-secondary: #f2f2f2;
+  --lp-secondary-foreground: #191b1f;
+  --lp-destructive: #d0342c;
+  --lp-destructive-foreground: #ffffff;
+  --lp-border: #e0e0e0;
+  --lp-foreground: #1a1a1a;
+  --lp-card-foreground: #1a1a1a;
+  --lp-muted-foreground: #4d4d4d;
+}
+
+.font-inter {
+  font-family: 'Inter', sans-serif;
+}
+
+.font-outfit {
+  font-family: 'Outfit', sans-serif;
+}
+
+.gradient-text {
+  background: linear-gradient(90deg, #FF5A24 0%, #8050FF 100%);
+  background-clip: text;
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+}
+
+.gradient-cta {
+  background: linear-gradient(white, white) padding-box, linear-gradient(90deg, #FF5A24 0%, #8050FF 100%) border-box;
+  border: 1px solid transparent;
+  transition: background 0.2s ease;
+}
+
+.gradient-cta .gradient-cta-text {
+  background: linear-gradient(90deg, #FF5A24 0%, #8050FF 100%);
+  background-clip: text;
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+}
+
+.gradient-cta:hover {
+  background: linear-gradient(90deg, #FF5A24 0%, #8050FF 100%);
+}
+
+.gradient-cta:hover .gradient-cta-text {
+  background: none;
+  -webkit-text-fill-color: #fff;
+}

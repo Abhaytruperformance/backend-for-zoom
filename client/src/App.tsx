@@ -16,6 +16,7 @@ import PrivacyPolicy from "./pages/legal/PrivacyPolicy.js";
 import TermsOfUse from "./pages/legal/TermsOfUse.js";
 import Support from "./pages/legal/Support.js";
 import Documentation from "./pages/legal/Documentation.js";
+import Landing from "./landing/Landing.js";
 
 function RequireAuth({ children }: { children: React.ReactNode }) {
   if (!getToken()) return <Navigate to="/login" replace />;
@@ -73,6 +74,7 @@ export default function App() {
   return (
     <>
       <Routes>
+        <Route path="/" element={authed ? <Navigate to="/dashboard" replace /> : <Landing />} />
         <Route path="/privacy" element={<PrivacyPolicy />} />
         <Route path="/terms" element={<TermsOfUse />} />
         <Route path="/support" element={<Support />} />
