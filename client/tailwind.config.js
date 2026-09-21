@@ -5,6 +5,13 @@ export default {
   // global elements (button/input/h1/etc.) that the authenticated app already styles.
   content: ["./src/landing/**/*.{ts,tsx}"],
   corePlugins: { preflight: false },
+  // Tailwind v3 wraps its own output in real CSS `@layer` blocks, which always lose
+  // to unlayered CSS regardless of specificity — and index.css's global element
+  // selectors (nav/button/h1-h3/p/ul) are unlayered. Without this, Tailwind utilities
+  // on the landing page would silently lose to those leaked styles. `important: true`
+  // forces every utility class to `!important`, which is the standard fix for
+  // integrating Tailwind alongside pre-existing global CSS it needs to override.
+  important: true,
   theme: {
     extend: {
       colors: {

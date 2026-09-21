@@ -20,6 +20,71 @@
   --lp-muted-foreground: #4d4d4d;
 }
 
+/* Neutralize the app shell's global element styles from bleeding into this page.
+   index.css sets bare nav/button/h1-h3/p/ul/a rules (no class scoping, unlayered)
+   for the authenticated app; Tailwind's own reset (preflight) is deliberately off
+   here so IT doesn't leak the other way into the shell.
+
+   Every declaration here is `!important`, matched with `important: true` in
+   tailwind.config.js. Verified by computed-style inspection, not guessed from
+   pixels: Tailwind v3's `@tailwind base/components/utilities` output is wrapped in
+   real CSS `@layer` blocks, and unlayered CSS always wins over layered CSS
+   regardless of specificity — so index.css's unlayered leaks were beating Tailwind
+   utilities outright, and a non-important version of this same reset (correctly
+   scoped to zero specificity via `:where()`) still lost source-order ties against
+   index.css for the same reason. With both sides forced `!important`, normal
+   specificity resumes deciding ties: Tailwind's utility classes (0,1,0) correctly
+   outrank this reset's `:where()`-zeroed (0,0,1), so an explicit utility like
+   `max-w-[400px]` on a specific `<p>` still wins over the blanket `max-width: none`
+   below, while elements with no conflicting utility fall through to this reset
+   safely instead of the leak. */
+:where(.tru-landing) nav {
+  position: static !important;
+  background: none !important;
+  backdrop-filter: none !important;
+  border-bottom: none !important;
+  top: auto !important;
+  z-index: auto !important;
+}
+:where(.tru-landing) button {
+  font: inherit !important;
+  padding: 0 !important;
+  border-radius: 0 !important;
+  border: none !important;
+  background: none !important;
+  color: inherit !important;
+  cursor: pointer !important;
+}
+:where(.tru-landing) a {
+  color: inherit !important;
+  text-decoration: inherit !important;
+}
+:where(.tru-landing) h1,
+:where(.tru-landing) h2,
+:where(.tru-landing) h3 {
+  font-family: inherit !important;
+  text-transform: none !important;
+  letter-spacing: normal !important;
+  color: inherit !important;
+  margin: 0 !important;
+  font-size: inherit !important;
+  font-weight: inherit !important;
+}
+:where(.tru-landing) p {
+  margin: 0 !important;
+  max-width: none !important;
+}
+:where(.tru-landing) ul {
+  list-style: none !important;
+  margin: 0 !important;
+  padding: 0 !important;
+}
+:where(.tru-landing) li {
+  padding: 0 !important;
+  border-bottom: none !important;
+  font-size: inherit !important;
+}
+
 .font-inter {
   font-family: 'Inter', sans-serif;
 }
