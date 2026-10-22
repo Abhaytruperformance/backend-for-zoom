@@ -2,7 +2,7 @@ import { Router } from "express";
 import { z } from "zod";
 import { requireAuth } from "../../middleware/auth.js";
 import { asyncRoute } from "../../middleware/errorHandler.js";
-import { seedDemoScenario } from "../../lib/demoScenarios.js";
+import { seedDemoScenario, seedDemoScenarioOffline } from "../../lib/demoScenarios.js";
 
 /**
  * HTTP equivalent of scripts/demo-fallback.ts, for hosts with no shell access (e.g. Render's
@@ -12,13 +12,15 @@ import { seedDemoScenario } from "../../lib/demoScenarios.js";
 export const devRouter = Router();
 devRouter.use(requireAuth);
 
-const seedSchema = z.object({ scenario: z.enum(["1", "2"]) });
+const seedSchema = z.object({ scenario: z.enum(["1", "2"]), offline: z.boolean().optional() });
 
 devRouter.post(
   "/seed-demo",
   asyncRoute(async (req, res) => {
     const body = seedSchema.parse(req.body);
-    const result = await seedDemoScenario(req.user!.tenantId, body.scenario);
+    const result = body.offline
+      ? await seedDemoScenarioOffline(req.user!.tenantId, body.scenario)
+      : await seedDemoScenario(req.user!.tenantId, body.scenario);
     res.json(result);
   })
 );
